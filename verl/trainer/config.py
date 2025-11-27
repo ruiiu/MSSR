@@ -78,7 +78,7 @@ class AlgorithmConfig:
     lam: float = 1.0
     """lambda value for ppo gae advantage estimator"""
     adv_estimator: str = "grpo"
-    """advantage estimator, support `gae`, `grpo`, `reinforce_plus_plus`, `remax`, `rloo`"""
+    """advantage estimator, support `gae`, `grpo`, `reinforce_plus_plus`, `remax`, `rloo`, `spo`"""
     disable_kl: bool = False
     """disable reference model"""
     use_kl_loss: bool = False
@@ -101,6 +101,105 @@ class AlgorithmConfig:
     """filter out low reward samples if online filtering"""
     filter_high: float = 0.99
     """filter out high reward samples if online filtering"""
+    
+    # SPO-specific configuration parameters (from paper: arXiv:2509.13232)
+    spo_rho_min: float = 0.875
+    """minimum forgetting rate for SPO (corresponds to W_max=25)"""
+    spo_rho_max: float = 0.96
+    """maximum forgetting rate for SPO (corresponds to W_min=8)"""
+    spo_target_kl: float = 0.06
+    """target KL divergence for adaptive forgetting in SPO (used with global adaptive rho)"""
+    spo_run_initialization: bool = True
+    """whether to run Algorithm initialization (run policy once through dataset). If False, uses fallback v_init for all prompts."""
+    spo_n_init: int = 1
+    """number of times to sample each prompt during initialization to get better initial value estimates"""
+    spo_v_init: float = 0.5
+    """fallback value for prompts not in initialization set, or for all prompts if spo_run_initialization=False"""
+    spo_normalize_globally: bool = True
+    """whether to normalize advantages globally across the batch in SPO (critical feature)"""
+    spo_eps: float = 1e-6
+    """epsilon for numerical stability in SPO"""
+    
+    # Per-prompt rho calculation (reference implementation style)
+    spo_per_sample_rho: bool = False
+    """use per-sample rho calculation (True) or global adaptive rho (False).
+    Per-sample: each sample gets its own rho by comparing log probs when it reappears.
+    Global: all samples use same rho based on global KL history."""
+    spo_d_half: float = 0.06
+    """half-life parameter for exponential decay in per-prompt rho: ρ = 2^(-D/D_half)"""
+    
+    # Note: SPO uses per-prompt value tracking with Bayesian updates
+    # Works for both text-only and multimodal scenarios
+    
+    # SPO Weighted Curriculum Sampling (reference implementation style)
+    spo_use_uncertainty_weighting: bool = True
+    """enable uncertainty-based weighted curriculum sampling: weight = sqrt(p*(1-p))"""
+    spo_priority_alpha: float = 1.0
+    """scaling factor for uncertainty weights (1.0=linear, >1=emphasize high uncertainty)"""
+    spo_priority_epsilon: float = 1e-6
+    """epsilon for SPO prioritized sampling to avoid zero weights"""
+
+    spo_kl_window_size: int = 20
+    """window size for computing average KL in global adaptive rho calculation"""
+    
+    # Entropy-based advantage shaping (applicable to all algorithms)
+    use_entropy_shaping: bool = False
+    """enable entropy-based advantage shaping for all algorithms (PPO, GRPO, RLOO, SPO, etc.).
+    This encourages exploration by adding an entropy-based term to advantages.
+    The formula is: ψ(H_t) = min(α·H_t^detach, |A_t|/κ)
+    Can be used with any advantage estimator."""
+    entropy_alpha: float = 0.4
+    """scaling factor for entropy term in advantage shaping.
+    Higher values (e.g., 0.5-1.0) encourage more exploration,
+    lower values (e.g., 0.1-0.3) provide subtle exploration signal.
+    Recommended range: 0.2-0.6."""
+    entropy_kappa: float = 2.0
+    """denominator for advantage magnitude term in entropy shaping.
+    Controls the maximum entropy bonus relative to advantage magnitude.
+    Lower values (e.g., 1.0-1.5) allow larger entropy bonuses,
+    higher values (e.g., 2.0-4.0) cap the entropy bonus more conservatively.
+    Recommended: 2.0."""
+    
+    # Entropy loss regularization for encouraging exploration
+    use_entropy_loss: bool = False
+    """enable entropy loss regularization to encourage exploration.
+    This adds negative entropy to the policy gradient loss (maximize entropy = minimize -H).
+    Different from entropy shaping which modifies advantages.
+    Can be used with or without SPO, PPO, or other algorithms."""
+    entropy_coef: float = 0.01
+    """coefficient for entropy loss regularization.
+    Higher values (e.g., 0.05-0.1) provide stronger exploration bonus,
+    lower values (e.g., 0.001-0.01) provide subtle exploration signal.
+    Recommended range: 0.001-0.05 depending on task."""
+    
+    # Text-only KL divergence regularization (between text-only and multimodal streams)
+    text_kl_enabled: bool = False
+    """enable KL divergence regularization between text-only and multimodal streams.
+    When enabled, creates a text-only stream (with blank images) to compute
+    KL(text_only || multimodal) where text-only is the reference/anchor policy.
+    This regularizes the multimodal policy to not diverge too far from text-only baseline,
+    preventing overfitting to visual features while allowing helpful visual grounding."""
+    text_kl_coef: float = 0.01
+    """coefficient for text-only KL divergence regularization.
+    Higher values (e.g., 0.5-1.0) provide stronger regularization,
+    lower values (e.g., 0.01-0.1) provide subtle regularization.
+    Recommended range: 0.05-0.3 depending on how much you want to constrain
+    the multimodal policy to stay close to text-only policy."""
+    
+    # Text KL annealing: gradually phase out text-only KL regularization during training
+    text_kl_annealing: bool = False
+    """enable annealing for text-only KL regularization. When enabled, text KL probability
+    starts high and gradually decreases to zero over training, allowing model to learn
+    with regularization early then train freely later."""
+    text_kl_annealing_start_prob: float = 1.0
+    """initial probability of using text KL regularization (1.0 = always use, 0.0 = never use).
+    Typically set to 1.0 to start with full text KL regularization."""
+    text_kl_annealing_end_prob: float = 0.0
+    """final probability of using text KL regularization after annealing.
+    Typically set to 0.0 to phase out text KL regularization completely."""
+    text_kl_annealing_start_step: int = 0
+    """training step to start annealing (0 = from beginning).
+    Annealing ends at trainer.max_steps (no separate end_step needed)."""
 
 
 @dataclass
@@ -141,6 +240,8 @@ class TrainerConfig:
     """save checkpoint path, if not specified, use `checkpoints/project_name/experiment_name`"""
     load_checkpoint_path: Optional[str] = None
     """load checkpoint path"""
+    enable_passk_validation: bool = False
+    """enable pass@k validation"""
 
     def post_init(self):
         if self.save_checkpoint_path is None:
@@ -170,6 +271,10 @@ class PPOConfig:
         self.worker.actor.use_kl_loss = self.algorithm.use_kl_loss
         self.worker.actor.kl_penalty = self.algorithm.kl_penalty
         self.worker.actor.kl_coef = self.algorithm.kl_coef
+        self.worker.actor.use_entropy_loss = self.algorithm.use_entropy_loss
+        self.worker.actor.entropy_coef = self.algorithm.entropy_coef
+        self.worker.actor.text_kl_enabled = self.algorithm.text_kl_enabled
+        self.worker.actor.text_kl_coef = self.algorithm.text_kl_coef
 
     def deep_post_init(self):
         recursive_post_init(self)

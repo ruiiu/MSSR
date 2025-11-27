@@ -18,6 +18,16 @@ from typing import Any, Dict, List
 from mathruler.grader import extract_boxed_content, grade_answer
 
 
+def extract_ground_truth(ground_truth: str) -> str:
+    """Extract answer from <answer>...</answer> tags if present, otherwise return as-is."""
+    if isinstance(ground_truth, str):
+        # Try to extract from <answer> tags (case-insensitive)
+        answer_match = re.search(r'<answer>\s*(.*?)\s*</answer>', ground_truth, re.DOTALL | re.IGNORECASE)
+        if answer_match:
+            return answer_match.group(1).strip()
+    return ground_truth
+
+
 def format_reward(response: str) -> float:
     pattern = re.compile(r"<think>.*</think>.*\\boxed\{.*\}.*", re.DOTALL)
     format_match = re.fullmatch(pattern, response)
@@ -25,11 +35,13 @@ def format_reward(response: str) -> float:
 
 
 def accuracy_reward(response: str, ground_truth: str) -> float:
+    # Extract ground truth from <answer> tags if present
+    clean_ground_truth = extract_ground_truth(ground_truth)
     answer = extract_boxed_content(response)
-    return 1.0 if grade_answer(answer, ground_truth) else 0.0
+    return 1.0 if grade_answer(answer, clean_ground_truth) else 0.0
 
 
-def compute_score(reward_inputs: List[Dict[str, Any]], format_weight: float = 0.1) -> List[Dict[str, float]]:
+def compute_score(reward_inputs: List[Dict[str, Any]], format_weight: float = 0.0) -> List[Dict[str, float]]:
     if not isinstance(reward_inputs, list):
         raise ValueError("Please use `reward_type=batch` for math reward function.")
 

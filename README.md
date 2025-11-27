@@ -22,6 +22,7 @@ EasyR1 is efficient and scalable due to the design of **[HybirdEngine](https://a
   - Reinforce++
   - ReMax
   - RLOO
+  - **SPO (Single-stream Policy Optimization)** - Novel algorithm with persistent value tracking and multimodal support
 
 - Supported datasets
   - Any text, vision-text dataset in a [specific format](#custom-dataset)
@@ -90,6 +91,82 @@ python3 scripts/model_merger.py --local_dir checkpoints/easy_r1/exp_name/global_
 > If you encounter issues with connecting to Hugging Face, consider using `export HF_ENDPOINT=https://hf-mirror.com`.
 >
 > If you want to use SwanLab logger, consider using `bash examples/qwen2_5_vl_7b_geo3k_swanlab.sh`.
+
+## SPO (Single-stream Policy Optimization): Accurate Implementation
+
+We have implemented the **Single-stream Policy Optimization (SPO)** algorithm based on the paper [arXiv:2509.13232](https://arxiv.org/abs/2509.13232) with **complete accuracy** to the paper's specifications. SPO addresses key limitations of group-based methods like GRPO by:
+
+- **Eliminating degenerate groups** through per-prompt persistent value tracking
+- **Removing synchronization barriers** via single-stream operation (n=1) for 4.35× throughput speedup
+- **Providing stable learning signals** with per-prompt baselines and global batch normalization
+- **Supporting both text-only and multimodal scenarios** with unified Bayesian value tracking
+
+### SPO Training Examples
+
+#### Text-only SPO on Math Reasoning
+```bash
+bash examples/qwen2_5_7b_math_spo.sh
+```
+
+#### Vision-Language SPO on Geometry Problems
+```bash
+bash examples/qwen2_5_vl_7b_geo3k_spo.sh
+```
+
+### Key SPO Features (Section 4.1 - Paper-Accurate)
+
+1. **Beta Distribution Value Function**: V(x) ~ Beta(α(x), β(x)) with V̂(x) = α/(α+β) (Equation 5)
+2. **Per-Prompt Informed Initialization (Algorithm 2)**: 
+   - For each prompt x, collect n_0=8 outcomes with initial policy π_0
+   - Compute v̂_0(x) = (1/n_0) * Σ r^(k) (average of outcomes)
+   - Set α_0(x) = N_0 * v̂_0(x), β_0(x) = N_0 * (1 - v̂_0(x)) where N_0 = 1/(1-ρ_min) = 8
+3. **Bayesian Updates with Forgetting**: α_new = ρ*α + r, β_new = ρ*β + (1-r) (Equation 7)
+4. **KL-Adaptive Forgetting Rates**: ρ ∈ [0.875, 0.96] adapts based on policy change rate
+5. **Global Batch Normalization**: Normalizes advantages across entire batch after per-prompt baseline subtraction
+6. **Single-Stream Operation**: Uses n=1 (one response per prompt) unlike GRPO's n>1 groups
+7. **Unified Multimodal Support**: Same Beta-Bernoulli formulation works for text-only and vision-language
+
+**Algorithm Initialization**: The trainer implements Algorithm 2 from Appendix A when `spo_run_initialization=true` (default). At the start of training, it collects `n_0` samples per prompt using the initial policy, computes per-prompt success rates v̂_0(x), and initializes the value tracker with α_0(x) = N_0 * v̂_0(x) and β_0(x) = N_0 * (1 - v̂_0(x)). This provides accurate, data-driven initialization. Set `spo_run_initialization=false` to skip initialization and use fallback (v_init=0.5 for all prompts) for faster startup, useful for debugging.
+
+### Implementation Highlights
+
+From the paper (Section D: Training and Evaluation Details):
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `run_init` | true | Run Algorithm 2 initialization (true=paper-accurate, false=faster) |
+| `N_0` | 8 | Effective window size: 1/(1-ρ_min) (Algorithm 2) |
+| `n_0` | 2-5 | Samples per prompt for initialization (if run_init=true) |
+| `v̂_0(x)` | computed | Per-prompt: (1/n_0) * Σ r^(k) (if run_init=true) |
+| `α_0(x)` | N_0 * v̂_0(x) | Initial α for prompt x (if run_init=true) |
+| `β_0(x)` | N_0 * (1-v̂_0(x)) | Initial β for prompt x (if run_init=true) |
+| `v_fallback` | 0.5 | Fallback (if run_init=false or for unseen prompts) |
+| `ρ_min` | 0.875 | Minimum forgetting rate (W=8, fast) |
+| `ρ_max` | 0.96 | Maximum forgetting rate (W=25, slow) |
+| `n` | 1 | Single response per prompt |
+| `batch_size` | 2048 | 8× GRPO prompt batch (matches total compute) |
+| `temperature` | 1.0 | Training sampling temperature |
+| `top_p` | 1.0 | Training top-p sampling |
+
+### Performance Improvements (from paper)
+
+On hard math benchmarks with Qwen3-8B:
+- **Average maj@32**: +3.4 pp over GRPO
+- **BRUMO 25**: +7.3 pp absolute gain
+- **AIME 25**: +4.4 pp absolute gain
+- **HMMT 25**: +3.3 pp absolute gain
+- **Consistent pass@k gains** across all evaluated k values
+
+### Documentation
+
+See [SPO_IMPLEMENTATION.md](SPO_IMPLEMENTATION.md) for detailed implementation documentation, including:
+- Per-prompt value tracking architecture
+- Bayesian update mechanism with adaptive forgetting
+- Global batch normalization algorithm
+- Comparison with GRPO
+- Complete parameter specifications
+
+The SPO implementation uses `config_spo.yaml` with paper-accurate hyperparameters that work for both text-only and vision-language scenarios.
 
 ## Custom Dataset
 
@@ -208,6 +285,17 @@ We also thank Guangming Sheng and Chi Zhang for helpful discussions.
   author       = {Yaowei Zheng, Junting Lu, Shenzhi Wang, Zhangchi Feng, Dongdong Kuang, Yuwen Xiong},
   howpublished = {\url{https://github.com/hiyouga/EasyR1}},
   year         = {2025}
+}
+```
+
+For the SPO algorithm implementation:
+
+```bibtex
+@article{xu2025single,
+  title={Single-stream Policy Optimization},
+  author={Xu, Zhongwen and Ding, Zihan},
+  journal={arXiv preprint arXiv:2509.13232},
+  year={2025}
 }
 ```
 

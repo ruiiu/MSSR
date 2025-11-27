@@ -1,15 +1,20 @@
 data:
-  train_files: hiyouga/math12k@train
-  val_files: hiyouga/math12k@test
-  prompt_key: problem
-  answer_key: answer
-  image_key: images
+  train_files: FanqingM/MMK12@train  # 17,616 multimodal math/science problems
+  val_files: wodeni/mathvista@testmini  # 1,000 multimodal math problems
+
+  # Column mappings - will auto-detect 'question'/'problem' and 'answer'/'solution'
+  prompt_key: prompt  # Auto-detects: 'question' (MMK12) or 'problem' (mathvista)
+  answer_key: answer  # Auto-detects: 'answer' (MMK12) or 'solution' (mathvista)
+  image_key: image    # CRITICAL: Both datasets use 'image' (singular), not 'images'
+
   video_key: videos
+
+  # NOTE: Both datasets have images embedded as PIL objects, not file paths
   image_dir: null
   video_fps: 2.0
   max_prompt_length: 2048
-  max_response_length: 2048
-  rollout_batch_size: 512  # equivalent to verl's data.train_batch_size
+  max_response_length: 4096
+  rollout_batch_size: 256  # equivalent to verl's data.train_batch_size
   mini_rollout_batch_size: null  # equivalent to verl's data.gen_batch_size
   val_batch_size: 1024
   format_prompt: ./examples/format_prompt/math.jinja
@@ -49,6 +54,8 @@ worker:
       weight_decay: 1.0e-2
       strategy: adamw  # {adamw, adamw_bf16}
       lr_warmup_ratio: 0.0
+      lr_scheduler_type: "constant"  # "constant", "cosine", "linear"
+      lr_scheduler_min_lr_ratio: 0.1  # Minimum LR as ratio of initial LR
     fsdp:
       enable_full_shard: true
       enable_cpu_offload: false
@@ -58,17 +65,17 @@ worker:
       offload_optimizer: true  # true: more CPU memory; false: more GPU memory
 
   rollout:
-    n: 5
+    n: 8
     temperature: 1.0
     top_p: 0.99
     limit_images: 0
     gpu_memory_utilization: 0.6
     enforce_eager: false
     enable_chunked_prefill: false
-    tensor_parallel_size: 2
+    tensor_parallel_size: 1
     disable_tqdm: false
     val_override_config:
-      temperature: 0.5
+      temperature: 0.6
       n: 1
 
   ref:
@@ -84,9 +91,9 @@ worker:
     reward_function: ./examples/reward_function/math.py:compute_score
 
 trainer:
-  total_epochs: 15
-  max_steps: null
-  project_name: easy_r1
+  # total_epochs: 
+  max_steps: 150
+  project_name: mm-spo
   experiment_name: qwen2_5_7b_math_grpo
   logger: ["console", "wandb"]
   nnodes: 1
@@ -101,3 +108,4 @@ trainer:
   save_model_only: false
   save_checkpoint_path: null
   load_checkpoint_path: null
+  enable_passk_validation: false

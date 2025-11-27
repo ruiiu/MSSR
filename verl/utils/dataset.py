@@ -50,7 +50,6 @@ def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     return {**tensors, **non_tensors}
 
-
 def process_image(
     image: Union[Dict[str, Any], ImageObject, str], min_pixels: Optional[int], max_pixels: Optional[int]
 ) -> ImageObject:
@@ -72,11 +71,13 @@ def process_image(
         width, height = int(image.width * resize_factor), int(image.height * resize_factor)
         image = image.resize((width, height))
 
+    # Handle palette images with transparency properly
+    if image.mode == "P" and "transparency" in image.info:
+        image = image.convert("RGBA")
     if image.mode != "RGB":
         image = image.convert("RGB")
 
     return image
-
 
 def process_video(
     video: str, min_pixels: Optional[int], max_pixels: Optional[int], video_fps: float, return_fps: bool = False
@@ -143,6 +144,41 @@ class RLHFDataset(Dataset):
             with open(format_prompt, encoding="utf-8") as f:
                 self.format_prompt = f.read()
 
+        # Auto-detect and map column names for compatibility across different datasets
+        if self.prompt_key not in self.dataset.column_names:
+            if 'question' in self.dataset.column_names:
+                print(f"[Dataset] Auto-mapped prompt_key '{self.prompt_key}' to 'question'")
+                self.prompt_key = 'question'
+            elif 'problem' in self.dataset.column_names:
+                print(f"[Dataset] Auto-mapped prompt_key '{self.prompt_key}' to 'problem'")
+                self.prompt_key = 'problem'
+            elif 'prompt' in self.dataset.column_names:
+                self.prompt_key = 'prompt'
+            else:
+                raise ValueError(
+                    f"Cannot find prompt column. Expected '{self.prompt_key}' but available columns are: {self.dataset.column_names}"
+                )
+
+        if self.answer_key not in self.dataset.column_names:
+            if 'answer' in self.dataset.column_names:
+                print(f"[Dataset] Auto-mapped answer_key '{self.answer_key}' to 'answer'")
+                self.answer_key = 'answer'
+            elif 'solution' in self.dataset.column_names:
+                print(f"[Dataset] Auto-mapped answer_key '{self.answer_key}' to 'solution'")
+                self.answer_key = 'solution'
+            else:
+                raise ValueError(
+                    f"Cannot find answer column. Expected '{self.answer_key}' but available columns are: {self.dataset.column_names}"
+                )
+
+        if self.image_key not in self.dataset.column_names and self.image_key in ['images', 'image']:
+            if 'image' in self.dataset.column_names:
+                print(f"[Dataset] Auto-mapped image_key '{self.image_key}' to 'image'")
+                self.image_key = 'image'
+            elif 'images' in self.dataset.column_names:
+                print(f"[Dataset] Auto-mapped image_key '{self.image_key}' to 'images'")
+                self.image_key = 'images'
+
         if filter_overlong_prompts:
             self.dataset = self.dataset.filter(
                 self._filter_overlong_prompts,
@@ -185,6 +221,11 @@ class RLHFDataset(Dataset):
         if self.image_key in example:
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             images = example[self.image_key]
+            
+            # Handle both single image and list of images
+            if not isinstance(images, list):
+                images = [images]
+            
             if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
                 images = [os.path.join(self.image_dir, image) for image in images]
 
@@ -217,11 +258,18 @@ class RLHFDataset(Dataset):
 
     def __getitem__(self, index):
         example: dict = self.dataset[index]
+        # Add dataset index as unique sample ID for SPO tracking
+        example["sample_id"] = index
         messages = self._build_messages(example)
 
         if self.image_key in example:
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             images = example.pop(self.image_key)
+            
+            # Handle both single image and list of images
+            if not isinstance(images, list):
+                images = [images]
+            
             if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
                 images = [os.path.join(self.image_dir, image) for image in images]
 

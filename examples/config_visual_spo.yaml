@@ -1,0 +1,160 @@
+# Visual-aware SPO Configuration
+
+data:
+  train_files: XenoZLH/MMRL30k@train
+  val_files: wodeni/mathvista@testmini
+  prompt_key: problem
+  answer_key: answer
+  image_key: images
+  video_key: videos
+  # # MathVista has different column names than MMRL30k
+  # val_prompt_key: problem  # same
+  # val_answer_key: solution  # different: MathVista uses "solution"
+  # val_image_key: image  # different: MathVista uses "image" (singular)
+  # val_video_key: videos
+  image_dir: null
+  video_fps: 2.0
+  max_prompt_length: 2048
+  max_response_length: 4096
+  rollout_batch_size: 2048  # Reduced batch size due to dual-stream processing
+  mini_rollout_batch_size: null
+  val_batch_size: 512
+  format_prompt: ./examples/format_prompt/math.jinja
+  override_chat_template: null
+  shuffle: true
+  seed: 1
+  min_pixels: 262144
+  max_pixels: 4194304
+  filter_overlong_prompts: true
+algorithm:
+  adv_estimator: spo  # Single-stream Policy Optimization
+  disable_kl: false
+  use_kl_loss: true
+  kl_penalty: low_var_kl
+  kl_coef: 0.01
+  online_filtering: false
+  
+  # Standard SPO parameters (STABILIZED)
+  spo_run_initialization: true
+  spo_n_init: 1
+  spo_rho_min: 0.875
+  spo_rho_max: 0.96
+  spo_target_kl: 0.01 
+  spo_v_init: 0.5
+  spo_normalize_globally: true
+  spo_eps: 1e-6
+  spo_per_sample_rho: false
+  spo_d_half: 0.06
+  spo_use_uncertainty_weighting: false
+  spo_priority_alpha: 1.0
+  spo_priority_epsilon: 1e-6
+  
+  spo_kl_window_size: 20
+  
+  # Entropy-based advantage shaping (applicable to all algorithms)
+  use_entropy_shaping: false
+  entropy_alpha: 0.4
+  entropy_kappa: 2.0
+  
+  # Entropy loss regularization for exploration
+  # Alternative to entropy shaping - adds -H to policy gradient loss
+  use_entropy_loss: false
+  # - false: No entropy regularization (default)
+  # - true: Enable entropy loss to encourage exploration
+  entropy_coef: 0.01
+  # - 0.001: Weak exploration bonus
+  # - 0.01: Moderate exploration (recommended starting point)
+  # - 0.05: Strong exploration bonus
+  
+  # Text-only KL divergence regularization
+  # Regularizes multimodal policy toward text-only policy
+  # When enabled, creates text-only stream (with blank images) for KL computation
+  text_kl_enabled: false
+  # - false: No text-only KL regularization (default)
+  # - true: Enable KL(text_only || multimodal) regularization
+  text_kl_coef: 0.01
+  # - 0.01-0.05: Weak regularization (allows more visual divergence)
+  # - 0.1-0.2: Moderate regularization (recommended starting point)
+  # - 0.3-0.5: Strong regularization (constrains multimodal policy tightly)
+  
+  # Text KL annealing: gradually phase out text KL during training
+  text_kl_annealing: false
+  text_kl_annealing_start_prob: 1.0  # Start with full text KL
+  text_kl_annealing_end_prob: 0.0    # Phase out completely
+  text_kl_annealing_start_step: 0    # Start from beginning
+ 
+
+worker:
+  actor:
+    global_batch_size: 128  # Smaller batch due to dual-stream overhead
+    micro_batch_size_per_device_for_update: 4
+    micro_batch_size_per_device_for_experience: 16
+    max_grad_norm: 0.5  # REDUCED: Tighter gradient clipping for SPO stability
+    padding_free: true
+    ulysses_size: 1
+    model:
+      model_path: Qwen/Qwen2.5-VL-7B-Instruct  # Must be multimodal model
+      enable_gradient_checkpointing: true
+      trust_remote_code: true
+      freeze_vision_tower: false  # Important: vision tower should be trainable
+    optim:
+      lr: 1.0e-6  # Initial learning rate (will decay with cosine annealing)
+      weight_decay: 1.0e-2
+      strategy: adamw
+      lr_warmup_ratio: 0  # No warmup - pure cosine annealing
+      lr_scheduler_type: "constant"  # Cosine annealing scheduler
+      lr_scheduler_min_lr_ratio: 0.1  # Minimum LR = 10% of initial LR (1e-7)
+    fsdp:
+      enable_full_shard: true
+      enable_cpu_offload: false
+      enable_rank0_init: true
+    offload:
+      offload_params: true
+      offload_optimizer: true
+
+  rollout:
+    n: 1  # SPO uses single-stream
+    temperature: 1.0
+    top_p: 1.0
+    top_k: -1
+    limit_images: 0
+    gpu_memory_utilization: 0.6  # Lower due to dual-stream processing
+    enforce_eager: false
+    enable_chunked_prefill: false
+    tensor_parallel_size: 1
+    disable_tqdm: false
+    val_override_config:
+      temperature: 0.6
+      n: 1
+
+  ref:
+    fsdp:
+      enable_full_shard: true
+      enable_cpu_offload: true
+      enable_rank0_init: true
+    offload:
+      offload_params: false
+
+  reward:
+    reward_type: batch
+    reward_function: ./examples/reward_function/math.py:compute_score
+
+trainer:
+  max_steps: 150
+  project_name: mm-spo
+  experiment_name: qwen2_5_vl_7b_visual_spo
+  logger: ["console", "wandb"]
+  nnodes: 1
+  n_gpus_per_node: 8
+  max_try_make_batch: 20
+  val_freq: 5
+  val_before_train: true
+  val_only: false
+  val_generations_to_log: 5
+  save_freq: 5
+  save_limit: 3
+  save_model_only: false
+  save_checkpoint_path: null
+  load_checkpoint_path: null
+  enable_passk_validation: false
+
