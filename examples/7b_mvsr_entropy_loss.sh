@@ -16,7 +16,7 @@ RAY_GPU_COUNT=2
 # export http_proxy="http://star-proxy.oa.com:3128"
 # export https_proxy="http://star-proxy.oa.com:3128"
 
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=4,5
 
 export TMPDIR=/tmp/rui/mssr_tmp
 
@@ -52,9 +52,9 @@ nohup python3 -m verl.trainer.main \
     algorithm.spo_run_initialization=true \
     algorithm.text_kl_enabled=false \
     algorithm.use_entropy_loss=true \
-    algorithm.entropy_coef=0.05 \
+    algorithm.entropy_coef=0.15 \
     worker.actor.model.model_path=${MODEL_PATH} \
-    trainer.experiment_name=7b_mvsr_entropy_loss_0.05 \
+    trainer.experiment_name=7b_mvsr_entropy_loss_0.15 \
     trainer.n_gpus_per_node=$RAY_GPU_COUNT \
     > /dev/null 2>&1 &
     # trainer.load_checkpoint_path=../mssr_ckpts/mm-spo/7b_mvsr_entropy_loss_0.05/global_step_65/actor/huggingface
