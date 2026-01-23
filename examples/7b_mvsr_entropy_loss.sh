@@ -7,7 +7,7 @@ WORKER_NODES=()  # Worker node IPs, "29.119.96.254" 29.232.224.137 "29.127.36.24
 SSH_USER="root"
 CONDA_ENV="easyr1"
 NETWORK_INTERFACE="bond1"
-RAY_GPU_COUNT=2
+RAY_GPU_COUNT=8
 
 # -------- START RAY HEAD --------
 # echo "[HEAD] Starting Ray head node..."
@@ -16,7 +16,7 @@ RAY_GPU_COUNT=2
 # export http_proxy="http://star-proxy.oa.com:3128"
 # export https_proxy="http://star-proxy.oa.com:3128"
 
-export CUDA_VISIBLE_DEVICES=2,3 
+# export CUDA_VISIBLE_DEVICES=2,3 
 
 export TMPDIR=/tmp/rui/mssr_tmp
 
@@ -52,9 +52,9 @@ nohup python3 -m verl.trainer.main \
     algorithm.spo_run_initialization=true \
     algorithm.text_kl_enabled=false \
     algorithm.use_entropy_loss=true \
-    algorithm.entropy_coef=0.1 \
+    algorithm.entropy_coef=0.05 \
     worker.actor.model.model_path=${MODEL_PATH} \
-    trainer.experiment_name=7b_mvsr_entropy_loss_0.1 \
+    trainer.experiment_name=7b_mvsr_entropy_loss_0.05 \
     trainer.n_gpus_per_node=$RAY_GPU_COUNT \
     > /dev/null 2>&1 &
     # trainer.load_checkpoint_path=../mssr_ckpts/mm-spo/7b_mvsr_entropy_loss_0.05/global_step_65/actor/huggingface
