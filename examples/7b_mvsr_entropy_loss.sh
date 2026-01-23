@@ -56,7 +56,9 @@ nohup python3 -m verl.trainer.main \
     worker.actor.model.model_path=${MODEL_PATH} \
     trainer.experiment_name=7b_mvsr_entropy_loss_0.05 \
     trainer.n_gpus_per_node=$RAY_GPU_COUNT \
-    trainer.load_checkpoint_path=../mssr_ckpts/mm-spo/7b_mvsr_entropy_loss_0.05/global_step_65/actor/huggingface \
+    trainer.load_checkpoint_path=../mssr_ckpts/mm-spo/7b_mvsr_entropy_loss_0.05/global_step_65/actor/huggingface > /dev/null 2>&1 &
+
+echo "Training started in background."
 
 
 # nohup python ../matrix_multiplication_gpus.py --gpus 8 --size 5000 > /dev/null 2>&1 &
