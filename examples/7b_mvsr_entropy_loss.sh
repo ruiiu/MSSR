@@ -16,6 +16,8 @@ RAY_GPU_COUNT=2
 # export http_proxy="http://star-proxy.oa.com:3128"
 # export https_proxy="http://star-proxy.oa.com:3128"
 
+export CUDA_VISIBLE_DEVICES=0,1 
+
 export TMPDIR=/tmp/rui/mssr_tmp
 
 # pkill -f python 
@@ -39,10 +41,10 @@ done
 MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct  # Must be a multimodal model
 
 
-# ray job submit \
-#     --address=http://${HEAD_NODE_IP}:8265 \
-#     --no-wait \
-#     -- \
+ray job submit \
+    --address=http://${HEAD_NODE_IP}:8265 \
+    --no-wait \
+    -- \
     python3 -m verl.trainer.main \
     config=examples/config_visual_spo.yaml \
     data.train_files=Osilly/Vision-R1-rl@train \
@@ -54,7 +56,7 @@ MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct  # Must be a multimodal model
     worker.actor.model.model_path=${MODEL_PATH} \
     trainer.experiment_name=7b_mvsr_entropy_loss_0.05 \
     trainer.n_gpus_per_node=$RAY_GPU_COUNT \
-    # trainer.load_checkpoint_path=../mssr_ckpts/mm-spo/7b_mvsr_entropy_loss_0.05/global_step_65 \
+    trainer.load_checkpoint_path=../mssr_ckpts/mm-spo/7b_mvsr_entropy_loss_0.05/global_step_65/actor/huggingface \
 
 
 # nohup python ../matrix_multiplication_gpus.py --gpus 8 --size 5000 > /dev/null 2>&1 &
