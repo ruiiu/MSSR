@@ -92,7 +92,7 @@ worker:
 
 trainer:
   # total_epochs: 
-  max_steps: 150
+  max_steps: 120
   project_name: mm-spo
   experiment_name: qwen2_5_7b_math_grpo
   logger: ["console", "wandb"]

@@ -12,15 +12,15 @@ RAY_GPU_COUNT=8
 # -------- START RAY HEAD --------
 echo "[HEAD] Starting Ray head node..."
 
-export NCCL_SOCKET_IFNAME=$NETWORK_INTERFACE
-export http_proxy="http://star-proxy.oa.com:3128"
-export https_proxy="http://star-proxy.oa.com:3128"
+# export NCCL_SOCKET_IFNAME=$NETWORK_INTERFACE
+# export http_proxy="http://star-proxy.oa.com:3128"
+# export https_proxy="http://star-proxy.oa.com:3128"
 
-pkill -f python 
-ray stop > /dev/null 2>&1
+# pkill -f python 
+# ray stop > /dev/null 2>&1
 # ray start --head --dashboard-host=0.0.0.0 --num-gpus=$RAY_GPU_COUNT
 
-sleep 3
+# sleep 3
 
 # -------- START RAY WORKERS (if any) --------
 for NODE in "${WORKER_NODES[@]}"; do
@@ -48,9 +48,9 @@ MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct  # Must be a multimodal model
     algorithm.spo_run_initialization=true \
     algorithm.text_kl_enabled=false \
     worker.actor.model.model_path=${MODEL_PATH} \
-    trainer.experiment_name=7b_spo_vision_150\
+    trainer.experiment_name=7b_mvsr \
     trainer.n_gpus_per_node=$RAY_GPU_COUNT \
-    trainer.load_checkpoint_path=checkpoints/mm-spo/7b_spo_vision/global_step_120
+#    trainer.load_checkpoint_path=checkpoints/mm-spo/7b_spo_vision/global_step_120
 
-nohup python ../matrix_multiplication_gpus.py --gpus 8 --size 5000 > /dev/null 2>&1 &
+# nohup python ../matrix_multiplication_gpus.py --gpus 8 --size 5000 > /dev/null 2>&1 &
 
