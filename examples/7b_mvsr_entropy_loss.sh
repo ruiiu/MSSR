@@ -22,9 +22,9 @@ export TMPDIR=/tmp/rui/mssr_tmp
 
 # pkill -f python 
 ray stop > /dev/null 2>&1
-# ray start --head --dashboard-host=0.0.0.0 --num-gpus=$RAY_GPU_COUNT
+ray start --head --dashboard-host=0.0.0.0 --num-gpus=$RAY_GPU_COUNT
 
-# sleep 3
+sleep 3
 
 # -------- START RAY WORKERS (if any) --------
 for NODE in "${WORKER_NODES[@]}"; do
