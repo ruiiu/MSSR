@@ -10,7 +10,7 @@ NETWORK_INTERFACE="bond1"
 RAY_GPU_COUNT=8
 
 # -------- START RAY HEAD --------
-echo "[HEAD] Starting Ray head node..."
+# echo "[HEAD] Starting Ray head node..."
 
 # export NCCL_SOCKET_IFNAME=$NETWORK_INTERFACE
 # export http_proxy="http://star-proxy.oa.com:3128"
@@ -21,7 +21,6 @@ export TMPDIR=/tmp/rui/mssr_tmp
 # pkill -f python 
 # ray stop > /dev/null 2>&1
 
-# sleep 2
 # ray start --head --dashboard-host=0.0.0.0 --num-gpus=$RAY_GPU_COUNT
 
 # sleep 3
