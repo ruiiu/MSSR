@@ -55,9 +55,9 @@ MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct  # Must be a multimodal model
     algorithm.text_kl_enabled=false \
     algorithm.use_entropy_shaping=true \
     worker.actor.model.model_path=${MODEL_PATH} \
-    trainer.experiment_name=7b_mssr_vision_150 \
+    trainer.experiment_name=7b_mssr \
     trainer.n_gpus_per_node=$RAY_GPU_COUNT \
-    trainer.load_checkpoint_path=checkpoints/mm-spo/7b_mssr_vision/global_step_120
+    # trainer.load_checkpoint_path=checkpoints/mm-spo/7b_mssr_vision/global_step_120
     # worker.actor.clip_ratio_high=0.2 \
 
 # nohup python ../matrix_multiplication_gpus.py --gpus 8 --size 5000 > /dev/null 2>&1 &
