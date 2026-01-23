@@ -16,7 +16,7 @@ RAY_GPU_COUNT=2
 # export http_proxy="http://star-proxy.oa.com:3128"
 # export https_proxy="http://star-proxy.oa.com:3128"
 
-export CUDA_VISIBLE_DEVICES=4,5
+export CUDA_VISIBLE_DEVICES=2,3 
 
 export TMPDIR=/tmp/rui/mssr_tmp
 
