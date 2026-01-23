@@ -21,7 +21,7 @@ export CUDA_VISIBLE_DEVICES=4,5
 export TMPDIR=/tmp/rui/mssr_tmp
 
 # pkill -f python 
-ray stop > /dev/null 2>&1
+# ray stop > /dev/null 2>&1
 # ray start --head --dashboard-host=0.0.0.0 --dashboard-port=8265 --port=6379 --num-gpus=$RAY_GPU_COUNT
 
 # sleep 3
