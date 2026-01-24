@@ -21,7 +21,7 @@ RAY_GPU_COUNT=4
 export TMPDIR=/tmp/rui/mssr_tmp
 
 # pkill -f python 
-# ray stop > /dev/null 2>&1
+ray stop > /dev/null 2>&1
 # ray start --head --dashboard-host=0.0.0.0 --dashboard-port=8265 --port=6379 --num-gpus=$RAY_GPU_COUNT
 
 # sleep 3
@@ -52,9 +52,9 @@ nohup python3 -m verl.trainer.main \
     algorithm.spo_run_initialization=true \
     algorithm.text_kl_enabled=false \
     algorithm.use_entropy_loss=true \
-    algorithm.entropy_coef=0.15 \
+    algorithm.entropy_coef=0.1 \
     worker.actor.model.model_path=${MODEL_PATH} \
-    trainer.experiment_name=7b_mvsr_entropy_loss_0.15 \
+    trainer.experiment_name=7b_mvsr_entropy_loss_0.1 \
     trainer.n_gpus_per_node=$RAY_GPU_COUNT \
     > /dev/null 2>&1 &
     # trainer.load_checkpoint_path=../mssr_ckpts/mm-spo/7b_mvsr_entropy_loss_0.05/global_step_65/actor/huggingface
