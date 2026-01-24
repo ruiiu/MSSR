@@ -7,7 +7,7 @@ WORKER_NODES=()  # Worker node IPs, "29.119.96.254" 29.232.224.137 "29.127.36.24
 SSH_USER="root"
 CONDA_ENV="easyr1"
 NETWORK_INTERFACE="bond1"
-RAY_GPU_COUNT=4
+RAY_GPU_COUNT=8
 
 # -------- START RAY HEAD --------
 # echo "[HEAD] Starting Ray head node..."
