@@ -21,7 +21,7 @@ RAY_GPU_COUNT=4
 export TMPDIR=/tmp/rui/mssr_tmp
 
 # pkill -f python 
-ray stop > /dev/null 2>&1
+# ray stop > /dev/null 2>&1
 # ray start --head --dashboard-host=0.0.0.0 --dashboard-port=8265 --port=6379 --num-gpus=$RAY_GPU_COUNT
 
 # sleep 3
@@ -45,7 +45,7 @@ MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct  # Must be a multimodal model
 #     --address=http://${HEAD_NODE_IP}:8265 \
 #     --no-wait \
 #     -- \
-nohup python3 -m verl.trainer.main \
+    python3 -m verl.trainer.main \
     config=examples/config_visual_spo.yaml \
     data.train_files=Osilly/Vision-R1-rl@train \
     data.val_files=Osilly/Vision-R1-rl@test \
@@ -56,10 +56,10 @@ nohup python3 -m verl.trainer.main \
     worker.actor.model.model_path=${MODEL_PATH} \
     trainer.experiment_name=7b_mvsr_entropy_loss_0.1 \
     trainer.n_gpus_per_node=$RAY_GPU_COUNT \
-    > /dev/null 2>&1 &
+    # > /dev/null 2>&1 &
     # trainer.load_checkpoint_path=../mssr_ckpts/mm-spo/7b_mvsr_entropy_loss_0.05/global_step_65/actor/huggingface
 
-echo "Training started in background."
+# echo "Training started in background."
 
 
 # nohup python ../matrix_multiplication_gpus.py --gpus 8 --size 5000 > /dev/null 2>&1 &
