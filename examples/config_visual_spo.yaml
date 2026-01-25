@@ -45,6 +45,7 @@ algorithm:
   spo_eps: 1e-6
   spo_per_sample_rho: false
   spo_d_half: 0.06
+  spo_use_fixed_rho: false
   spo_use_uncertainty_weighting: false
   spo_priority_alpha: 1.0
   spo_priority_epsilon: 1e-6

@@ -106,7 +106,8 @@ class SPOValueTracker:
                  target_kl: float = 0.1,
                  v_init: float = 0.5,
                  use_per_sample_rho: bool = True,
-                 d_half: float = 0.06
+                 d_half: float = 0.06,
+                 use_fixed_rho: bool = False
     ):
         """
         Args:
@@ -116,6 +117,7 @@ class SPOValueTracker:
             v_init: Fallback value for prompts not in initialization set (default 0.5)
             use_per_sample_rho: If True, use per-prompt rho calculation like reference implementation
             d_half: Half-life parameter for exponential decay (D_half = 0.06 in reference)
+            use_fixed_rho: If True, use fixed rho = (rho_min + rho_max) / 2 (default False)
         
         Note:
             For proper initialization per Algorithm 2, call initialize_from_samples()
@@ -128,6 +130,7 @@ class SPOValueTracker:
         self.v_init = v_init
         self.use_per_sample_rho = use_per_sample_rho
         self.d_half = d_half
+        self.use_fixed_rho = use_fixed_rho
         
         # Compute N_0 from Algorithm 2, line 1
         # N_0 = 1/(1-ρ_min) = effective window size
@@ -163,6 +166,10 @@ class SPOValueTracker:
         Returns:
             rho: Forgetting rate in [rho_min, rho_max]
         """
+        # If using fixed rho, return the fixed value
+        if self.use_fixed_rho:
+            return (self.rho_min + self.rho_max) / 2
+        
         # if len(self.recent_kl_values) < 10:
         #     # Not enough data, use middle value
         #     return (self.rho_min + self.rho_max) / 2
@@ -377,6 +384,85 @@ class SPOValueTracker:
             per_prompt_rho[sample_id] = rho
         
         return per_prompt_rho
+    
+    def get_beta_distribution_stats(self) -> dict:
+        """
+        Get statistics of the Beta distribution parameters for logging/visualization.
+        
+        This method computes summary statistics across all tracked prompts for:
+        - Alpha parameters (prior successes)
+        - Beta parameters (prior failures)
+        - Value estimates V(x) = α/(α+β)
+        - Uncertainty measures sqrt(p*(1-p))
+        
+        Returns:
+            dict: Statistics that can be logged to wandb, including:
+                - beta_dist/alpha_mean, beta_dist/alpha_std, beta_dist/alpha_min, beta_dist/alpha_max
+                - beta_dist/beta_mean, beta_dist/beta_std, beta_dist/beta_min, beta_dist/beta_max
+                - beta_dist/value_mean, beta_dist/value_std, beta_dist/value_min, beta_dist/value_max
+                - beta_dist/uncertainty_mean, beta_dist/uncertainty_std, beta_dist/uncertainty_min, beta_dist/uncertainty_max
+                - beta_dist/num_tracked_prompts
+        """
+        if len(self.prompt_alpha) == 0:
+            # No prompts tracked yet, return zeros
+            return {
+                'beta_dist/alpha_mean': 0.0,
+                'beta_dist/alpha_std': 0.0,
+                'beta_dist/alpha_min': 0.0,
+                'beta_dist/alpha_max': 0.0,
+                'beta_dist/beta_mean': 0.0,
+                'beta_dist/beta_std': 0.0,
+                'beta_dist/beta_min': 0.0,
+                'beta_dist/beta_max': 0.0,
+                'beta_dist/value_mean': 0.0,
+                'beta_dist/value_std': 0.0,
+                'beta_dist/value_min': 0.0,
+                'beta_dist/value_max': 0.0,
+                'beta_dist/uncertainty_mean': 0.0,
+                'beta_dist/uncertainty_std': 0.0,
+                'beta_dist/uncertainty_min': 0.0,
+                'beta_dist/uncertainty_max': 0.0,
+                'beta_dist/num_tracked_prompts': 0,
+            }
+        
+        # Collect all alpha and beta values
+        alphas = np.array(list(self.prompt_alpha.values()))
+        betas = np.array(list(self.prompt_beta.values()))
+        
+        # Compute value estimates: V(x) = α/(α+β)
+        values = alphas / (alphas + betas)
+        
+        # Compute uncertainty: sqrt(p*(1-p)) where p = V(x)
+        uncertainties = np.sqrt(values * (1 - values))
+        
+        return {
+            # Alpha statistics
+            'beta_dist/alpha_mean': float(np.mean(alphas)),
+            'beta_dist/alpha_std': float(np.std(alphas)),
+            'beta_dist/alpha_min': float(np.min(alphas)),
+            'beta_dist/alpha_max': float(np.max(alphas)),
+            
+            # Beta statistics
+            'beta_dist/beta_mean': float(np.mean(betas)),
+            'beta_dist/beta_std': float(np.std(betas)),
+            'beta_dist/beta_min': float(np.min(betas)),
+            'beta_dist/beta_max': float(np.max(betas)),
+            
+            # Value estimate statistics
+            'beta_dist/value_mean': float(np.mean(values)),
+            'beta_dist/value_std': float(np.std(values)),
+            'beta_dist/value_min': float(np.min(values)),
+            'beta_dist/value_max': float(np.max(values)),
+            
+            # Uncertainty statistics (for curriculum learning)
+            'beta_dist/uncertainty_mean': float(np.mean(uncertainties)),
+            'beta_dist/uncertainty_std': float(np.std(uncertainties)),
+            'beta_dist/uncertainty_min': float(np.min(uncertainties)),
+            'beta_dist/uncertainty_max': float(np.max(uncertainties)),
+            
+            # Count
+            'beta_dist/num_tracked_prompts': len(self.prompt_alpha),
+        }
     
     def reset(self):
         """Reset the tracker to initial state."""

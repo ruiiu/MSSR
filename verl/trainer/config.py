@@ -127,6 +127,8 @@ class AlgorithmConfig:
     Global: all samples use same rho based on global KL history."""
     spo_d_half: float = 0.06
     """half-life parameter for exponential decay in per-prompt rho: ρ = 2^(-D/D_half)"""
+    spo_use_fixed_rho: bool = False
+    """use fixed rho = (rho_min + rho_max) / 2 instead of adaptive or per-sample rho"""
     
     # Note: SPO uses per-prompt value tracking with Bayesian updates
     # Works for both text-only and multimodal scenarios

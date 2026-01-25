@@ -288,7 +288,8 @@ class RayPPOTrainer:
                 target_kl=config.algorithm.spo_target_kl,
                 v_init=config.algorithm.spo_v_init,
                 use_per_sample_rho=config.algorithm.spo_per_sample_rho,
-                d_half=config.algorithm.spo_d_half
+                d_half=config.algorithm.spo_d_half,
+                use_fixed_rho=config.algorithm.spo_use_fixed_rho
             )
             # Prioritized sampler for adaptive curriculum learning
             # Only initialize if uncertainty weighting is enabled
@@ -1251,6 +1252,11 @@ class RayPPOTrainer:
             metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
             metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
             metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, num_gpus=num_gpus))
+            
+            # Add SPO beta distribution statistics for logging
+            if self.config.algorithm.adv_estimator == AdvantageEstimator.SPO and self.spo_value_tracker is not None:
+                beta_stats = self.spo_value_tracker.get_beta_distribution_stats()
+                metrics.update(beta_stats)
 
             self.logger.log(data=metrics, step=self.global_step)
             main_tqdm.update()
