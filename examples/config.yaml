@@ -93,7 +93,7 @@ worker:
 trainer:
   # total_epochs: 
   max_steps: 150
-  project_name: mm-spo
+  project_name: mssr
   experiment_name: qwen2_5_7b_math_grpo
   logger: ["console", "wandb"]
   nnodes: 1
@@ -108,4 +108,3 @@ trainer:
   save_model_only: false
   save_checkpoint_path: null
   load_checkpoint_path: null
-  enable_passk_validation: false

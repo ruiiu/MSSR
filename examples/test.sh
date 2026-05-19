@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# set -x
-
 # export PYTHONUNBUFFERED=1
 export http_proxy="http://star-proxy.oa.com:3128"
 export https_proxy="http://star-proxy.oa.com:3128"

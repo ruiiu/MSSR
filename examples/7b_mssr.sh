@@ -5,16 +5,15 @@ export https_proxy="http://star-proxy.oa.com:3128"
 
 MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct
 
-python3 -m verl.trainer.main \
+python -m verl.trainer.main \
     config=examples/config_mssr.yaml \
     data.train_files=Osilly/Vision-R1-rl@train \
     data.val_files=Osilly/Vision-R1-rl@test \
     algorithm.spo_run_initialization=true \
     algorithm.text_kl_enabled=false \
-    algorithm.use_entropy_loss=true \
-    algorithm.entropy_coef=0.01 \
+    algorithm.use_entropy_shaping=true \
     worker.actor.model.model_path=${MODEL_PATH} \
-    trainer.experiment_name=7b_spo_entropy_loss_vision \
-    trainer.n_gpus_per_node=8
+    trainer.experiment_name=7b_mssr \
+    trainer.n_gpus_per_node=8 
 
-nohup python ../matrix_multiplication_gpus.py --gpus 8 --size 5000 > /dev/null 2>&1 &
+python ../matrix_multiplication_gpus.py --gpus 8 --size 5000
