@@ -122,7 +122,7 @@ def apply_kl_penalty(data: DataProto, kl_ctrl: KLController, kl_penalty="kl"):
 
 
 def compute_advantage(data: DataProto, adv_estimator: AdvantageEstimator, gamma: float = 1.0, lam: float = 1.0, 
-                     spo_value_tracker=None, spo_config=None):
+                     mvsr_value_tracker=None, mvsr_config=None):
     token_level_rewards = data.batch["token_level_rewards"]
     response_mask = data.batch["response_mask"]
     index = data.non_tensor_batch["uid"]
@@ -136,9 +136,9 @@ def compute_advantage(data: DataProto, adv_estimator: AdvantageEstimator, gamma:
         advantages, returns = core_algos.compute_grpo_outcome_advantage(token_level_rewards, response_mask, index)
     elif adv_estimator == AdvantageEstimator.REINFORCE_PLUS_PLUS:
         # Extract entropy shaping parameters for REINFORCE++
-        use_entropy_shaping = spo_config.use_entropy_shaping if (spo_config and hasattr(spo_config, 'use_entropy_shaping')) else False
-        entropy_alpha = spo_config.entropy_alpha if (spo_config and hasattr(spo_config, 'entropy_alpha')) else 0.4
-        entropy_kappa = spo_config.entropy_kappa if (spo_config and hasattr(spo_config, 'entropy_kappa')) else 2.0
+        use_entropy_shaping = mvsr_config.use_entropy_shaping if (mvsr_config and hasattr(mvsr_config, 'use_entropy_shaping')) else False
+        entropy_alpha = mvsr_config.entropy_alpha if (mvsr_config and hasattr(mvsr_config, 'entropy_alpha')) else 0.4
+        entropy_kappa = mvsr_config.entropy_kappa if (mvsr_config and hasattr(mvsr_config, 'entropy_kappa')) else 2.0
         log_probs_for_entropy = data.batch.get("old_log_probs", None) if use_entropy_shaping else None
         
         advantages, returns = core_algos.compute_reinforce_plus_plus_outcome_advantage(
@@ -155,8 +155,8 @@ def compute_advantage(data: DataProto, adv_estimator: AdvantageEstimator, gamma:
         )
     elif adv_estimator == AdvantageEstimator.RLOO:
         advantages, returns = core_algos.compute_rloo_outcome_advantage(token_level_rewards, response_mask, index)
-    elif adv_estimator == AdvantageEstimator.SPO:
-        # SPO uses per-sample value tracking with global normalization
+    elif adv_estimator == AdvantageEstimator.MVSR:
+        # MVSR uses per-sample value tracking with global normalization
         # Each sample (text + image) is tracked separately using sample_id
         
         # Get sample IDs for per-sample tracking
@@ -180,33 +180,33 @@ def compute_advantage(data: DataProto, adv_estimator: AdvantageEstimator, gamma:
             old_log_probs = data.batch["old_log_probs"]
             
             # Compute KL divergence for adaptation (only if not using per-prompt rho)
-            if not spo_value_tracker.use_per_sample_rho:
+            if not mvsr_value_tracker.use_per_sample_rho:
                 kl_divergences = core_algos.compute_kl(
                     data.batch["old_log_probs"], 
                     data.batch["ref_log_probs"],
-                    kl_penalty=spo_config.kl_penalty if spo_config else "kl"
+                    kl_penalty=mvsr_config.kl_penalty if mvsr_config else "kl"
                 )
         
-        # SPO uses raw task scores (no KL penalty) for both advantages and value tracking
+        # MVSR uses raw task scores (no KL penalty) for both advantages and value tracking
         # Ensure use_kl_loss: true in config so KL is handled as separate loss term
         token_level_scores = data.batch.get("token_level_scores", token_level_rewards)
         
-        # Extract entropy shaping parameters for SPO
-        use_entropy_shaping = spo_config.use_entropy_shaping if (spo_config and hasattr(spo_config, 'use_entropy_shaping')) else False
-        entropy_alpha = spo_config.entropy_alpha if (spo_config and hasattr(spo_config, 'entropy_alpha')) else 0.4
-        entropy_kappa = spo_config.entropy_kappa if (spo_config and hasattr(spo_config, 'entropy_kappa')) else 2.0
+        # Extract entropy shaping parameters for MVSR
+        use_entropy_shaping = mvsr_config.use_entropy_shaping if (mvsr_config and hasattr(mvsr_config, 'use_entropy_shaping')) else False
+        entropy_alpha = mvsr_config.entropy_alpha if (mvsr_config and hasattr(mvsr_config, 'entropy_alpha')) else 0.4
+        entropy_kappa = mvsr_config.entropy_kappa if (mvsr_config and hasattr(mvsr_config, 'entropy_kappa')) else 2.0
         log_probs_for_entropy = old_log_probs if use_entropy_shaping else None
         
-        # Compute SPO advantages with optional entropy shaping
-        result = core_algos.compute_spo_advantage(
+        # Compute MVSR advantages with optional entropy shaping
+        result = core_algos.compute_mvsr_advantage(
             token_level_scores=token_level_scores,  # Raw task scores (no KL penalty)
             response_mask=response_mask,
-            value_tracker=spo_value_tracker,
+            value_tracker=mvsr_value_tracker,
             sample_ids=sample_ids,
             kl_divergences=kl_divergences,
             old_log_probs=old_log_probs,  # For per-prompt rho calculation
-            eps=spo_config.spo_eps if spo_config else 1e-6,
-            normalize_globally=spo_config.spo_normalize_globally if spo_config else True,
+            eps=mvsr_config.mvsr_eps if mvsr_config else 1e-6,
+            normalize_globally=mvsr_config.mvsr_normalize_globally if mvsr_config else True,
             use_entropy_shaping=use_entropy_shaping,
             log_probs=log_probs_for_entropy,
             entropy_alpha=entropy_alpha,
@@ -277,32 +277,32 @@ class RayPPOTrainer:
         if config.algorithm.adv_estimator not in list(AdvantageEstimator):
             raise NotImplementedError(f"Unknown advantage estimator: {config.algorithm.adv_estimator}.")
 
-        # Initialize SPO value tracker and prioritized sampler if using SPO
-        if config.algorithm.adv_estimator == AdvantageEstimator.SPO:
-            from .core_algos import SPOValueTracker, SPOPrioritizedSampler
+        # Initialize MVSR value tracker and prioritized sampler if using MVSR
+        if config.algorithm.adv_estimator == AdvantageEstimator.MVSR:
+            from .core_algos import MVSRValueTracker, MVSRPrioritizedSampler
             # Per-prompt value tracker with Bayesian updates and KL-adaptive forgetting
             # Works for both text-only and multimodal scenarios
-            self.spo_value_tracker = SPOValueTracker(
-                rho_min=config.algorithm.spo_rho_min,
-                rho_max=config.algorithm.spo_rho_max,
-                target_kl=config.algorithm.spo_target_kl,
-                v_init=config.algorithm.spo_v_init,
-                use_per_sample_rho=config.algorithm.spo_per_sample_rho,
-                d_half=config.algorithm.spo_d_half
+            self.mvsr_value_tracker = MVSRValueTracker(
+                rho_min=config.algorithm.mvsr_rho_min,
+                rho_max=config.algorithm.mvsr_rho_max,
+                target_kl=config.algorithm.mvsr_target_kl,
+                v_init=config.algorithm.mvsr_v_init,
+                use_per_sample_rho=config.algorithm.mvsr_per_sample_rho,
+                d_half=config.algorithm.mvsr_d_half
             )
             # Prioritized sampler for adaptive curriculum learning
             # Only initialize if uncertainty weighting is enabled
-            if config.algorithm.spo_use_uncertainty_weighting:
-                self.spo_prioritized_sampler = SPOPrioritizedSampler(
+            if config.algorithm.mvsr_use_uncertainty_weighting:
+                self.mvsr_prioritized_sampler = MVSRPrioritizedSampler(
                     use_uncertainty_weighting=True,
-                    priority_alpha=config.algorithm.spo_priority_alpha,
-                    priority_epsilon=config.algorithm.spo_priority_epsilon
+                    priority_alpha=config.algorithm.mvsr_priority_alpha,
+                    priority_epsilon=config.algorithm.mvsr_priority_epsilon
                 )
             else:
-                self.spo_prioritized_sampler = None
+                self.mvsr_prioritized_sampler = None
         else:
-            self.spo_value_tracker = None
-            self.spo_prioritized_sampler = None
+            self.mvsr_value_tracker = None
+            self.mvsr_prioritized_sampler = None
 
         if config.data.rollout_batch_size % config.worker.actor.global_batch_size != 0:
             raise ValueError("Rollout batch size must be divisible by actor global batch size.")
@@ -537,7 +537,7 @@ class RayPPOTrainer:
         """
         Create a text-only version of the batch by replacing images with blank/zero images.
         
-        This is used for computing visual influence weights in visual-aware SPO.
+        This is used for computing visual influence weights in visual-aware MVSR.
         The text-only batch uses blank images (zeros) so the model processes "no visual information"
         while preserving sequence structure and token alignment.
         
@@ -656,7 +656,7 @@ class RayPPOTrainer:
                 [str(uuid.uuid4()) for _ in range(len(new_batch.batch))], dtype=object
             )
             
-            # Add sample_id for SPO per-sample tracking
+            # Add sample_id for MVSR per-sample tracking
             # sample_id comes from dataset and uniquely identifies each (text, image) combination
             # This is the dataset index, which is stable and unique
             if "sample_id" in batch_dict:
@@ -711,9 +711,9 @@ class RayPPOTrainer:
 
                 return batch[: self.config.data.rollout_batch_size * self.config.worker.rollout.n]
 
-    def _initialize_spo_from_dataset(self):
+    def _initialize_mvsr_from_dataset(self):
         """
-        Initialize SPO value tracker by running policy n_init times through entire dataset.
+        Initialize MVSR value tracker by running policy n_init times through entire dataset.
         
         This is a simplified alternative to multi-step collection:
         - Iterate through full dataset n_init times
@@ -721,9 +721,9 @@ class RayPPOTrainer:
         - Use average of n_init outcomes as initial value estimate
         - Every prompt gets initialized (no fallback needed)
         """
-        n_init = self.config.algorithm.spo_n_init
+        n_init = self.config.algorithm.mvsr_n_init
         print("\n" + "="*80)
-        print("SPO Algorithm Initialization")
+        print("MVSR Algorithm Initialization")
         print("="*80)
         print(f"Running policy {n_init} time(s) through entire dataset to collect initial value estimates...")
         print(f"Dataset size: {len(self.train_dataloader.dataset)} prompts\n")
@@ -796,7 +796,7 @@ class RayPPOTrainer:
                 batch_size = len(full_batch.batch)
                 for i in range(batch_size):
                     # Get the sequence-level binary outcome {0, 1}
-                    # For SPO with Beta-Bernoulli, we use pure binary rewards
+                    # For MVSR with Beta-Bernoulli, we use pure binary rewards
                     # The value tracker will use this to estimate V(x) = P(correct | x)
                     if len(reward_tensor.shape) > 1:
                         # Token-level rewards: sum to get sequence score
@@ -820,14 +820,14 @@ class RayPPOTrainer:
         outcomes = [dataset_idx_to_outcomes[idx] for idx in dataset_indices]  # List of lists (each sample has n_init outcomes)
         
         print(f"\n{'='*80}")
-        print("SPO Algorithm Initialization Complete")
+        print("MVSR Algorithm Initialization Complete")
         print("="*80)
         print(f"Initialized {len(dataset_indices)} dataset samples (from {total_samples_processed} processed)")
         print(f"Each sample evaluated {n_init} time(s) for better initial value estimates")
         print(f"Each sample ID uniquely identifies a (text, image) combination from the dataset")
         
         if len(dataset_indices) > 0:
-            self.spo_value_tracker.initialize_from_samples(dataset_indices, outcomes)
+            self.mvsr_value_tracker.initialize_from_samples(dataset_indices, outcomes)
             
             # Show success rate statistics (average across all outcomes)
             all_outcomes = [outcome for outcomes_list in outcomes for outcome in outcomes_list]
@@ -854,16 +854,16 @@ class RayPPOTrainer:
         self._load_checkpoint()
         main_tqdm.update(self.global_step)
 
-        # Initialize SPO value tracker (if using SPO and not resuming from checkpoint)
-        if (self.config.algorithm.adv_estimator == AdvantageEstimator.SPO and 
+        # Initialize MVSR value tracker (if using MVSR and not resuming from checkpoint)
+        if (self.config.algorithm.adv_estimator == AdvantageEstimator.MVSR and 
             self.global_step == 0 and 
-            self.config.algorithm.spo_run_initialization):
+            self.config.algorithm.mvsr_run_initialization):
             # Run policy once through dataset to initialize all prompts
-            self._initialize_spo_from_dataset()
-        elif self.config.algorithm.adv_estimator == AdvantageEstimator.SPO and self.global_step == 0:
+            self._initialize_mvsr_from_dataset()
+        elif self.config.algorithm.adv_estimator == AdvantageEstimator.MVSR and self.global_step == 0:
             print("\n" + "="*80)
-            print("SPO Initialization: SKIPPED (spo_run_initialization=False)")
-            print(f"Using fallback initialization with v_init={self.config.algorithm.spo_v_init} for all prompts")
+            print("MVSR Initialization: SKIPPED (mvsr_run_initialization=False)")
+            print(f"Using fallback initialization with v_init={self.config.algorithm.mvsr_v_init} for all prompts")
             print("="*80 + "\n")
 
         # perform validation before training
@@ -924,9 +924,9 @@ class RayPPOTrainer:
                         reward_metrics = {f"reward/{k}": v for k, v in reduce_metrics(reward_metrics).items()}
                         metrics.update(reward_metrics)
                     
-                    # Compute text-only KL divergence for SPO (if enabled)
+                    # Compute text-only KL divergence for MVSR (if enabled)
                     # Text-only stream is used to regularize multimodal policy
-                    if (self.config.algorithm.adv_estimator == AdvantageEstimator.SPO and 
+                    if (self.config.algorithm.adv_estimator == AdvantageEstimator.MVSR and 
                         hasattr(self.config.algorithm, 'text_kl_enabled') and
                         self.config.algorithm.text_kl_enabled):
                         
@@ -1002,7 +1002,7 @@ class RayPPOTrainer:
                                 metrics.update(text_kl_metrics)
                                 metrics["text_kl/annealing_skipped"] = 0.0
                         else:
-                            # Skip text KL this step (single-stream)
+                            # Skip text KL this step (single-rollout)
                             metrics["text_kl/annealing_skipped"] = 1.0
                     
                     # apply kl penalty if available
@@ -1019,20 +1019,20 @@ class RayPPOTrainer:
                         adv_estimator=self.config.algorithm.adv_estimator,
                         gamma=self.config.algorithm.gamma,
                         lam=self.config.algorithm.lam,
-                        spo_value_tracker=self.spo_value_tracker,
-                        spo_config=self.config.algorithm
+                        mvsr_value_tracker=self.mvsr_value_tracker,
+                        mvsr_config=self.config.algorithm
                     )
                     
-                    # Update SPO prioritized sampler weights after advantage computation
-                    if (self.config.algorithm.adv_estimator == AdvantageEstimator.SPO and 
-                        self.spo_prioritized_sampler is not None):
+                    # Update MVSR prioritized sampler weights after advantage computation
+                    if (self.config.algorithm.adv_estimator == AdvantageEstimator.MVSR and 
+                        self.mvsr_prioritized_sampler is not None):
                         # Update uncertainty-based weights from value tracker
-                        if self.spo_prioritized_sampler.use_uncertainty_weighting:
+                        if self.mvsr_prioritized_sampler.use_uncertainty_weighting:
                             # Get all sample IDs that have been initialized
-                            all_sample_ids = list(self.spo_value_tracker.prompt_alpha.keys())
+                            all_sample_ids = list(self.mvsr_value_tracker.prompt_alpha.keys())
                             if len(all_sample_ids) > 0:
-                                self.spo_prioritized_sampler.update_weights_from_value_tracker(
-                                    self.spo_value_tracker, all_sample_ids
+                                self.mvsr_prioritized_sampler.update_weights_from_value_tracker(
+                                    self.mvsr_value_tracker, all_sample_ids
                                 )
 
                 # update critic

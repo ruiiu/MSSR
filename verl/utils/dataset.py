@@ -258,7 +258,7 @@ class RLHFDataset(Dataset):
 
     def __getitem__(self, index):
         example: dict = self.dataset[index]
-        # Add dataset index as unique sample ID for SPO tracking
+        # Add dataset index as unique sample ID for MVSR tracking
         example["sample_id"] = index
         messages = self._build_messages(example)
 

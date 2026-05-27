@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Test script for SPO (Single-stream Policy Optimization) implementation.
-This script verifies that the SPO algorithm components work correctly.
+Test script for MVSR (Multimodal Vanilla Single-Rollout) implementation.
+This script verifies that the MVSR algorithm components work correctly.
 """
 
 import torch
@@ -13,22 +13,21 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from verl.trainer.core_algos import (
-    SPOValueTracker, 
-    SPOPrioritizedSampler,
-    compute_spo_advantage,
+    MVSRValueTracker, 
+    MVSRPrioritizedSampler,
+    compute_mvsr_advantage,
     AdvantageEstimator
 )
 
 
-def test_spo_value_tracker():
-    """Test SPOValueTracker functionality with Beta-Bernoulli updates."""
-    print("Testing SPOValueTracker (Beta distribution)...")
+def test_mvsr_value_tracker():
+    """Test MVSRValueTracker functionality with Beta-Bernoulli updates."""
+    print("Testing MVSRValueTracker (Beta distribution)...")
     
-    tracker = SPOValueTracker(
+    tracker = MVSRValueTracker(
         rho_min=0.875,
         rho_max=0.96,
         target_kl=0.1,
-        n_init=8,
         v_init=0.5
     )
     
@@ -93,11 +92,11 @@ def test_spo_value_tracker():
     print("✓ Value tracker reset correctly")
 
 
-def test_spo_advantage_computation():
-    """Test SPO advantage computation."""
-    print("\nTesting SPO advantage computation...")
+def test_mvsr_advantage_computation():
+    """Test MVSR advantage computation."""
+    print("\nTesting MVSR advantage computation...")
     
-    tracker = SPOValueTracker(rho_min=0.875, rho_max=0.96, target_kl=0.1, n_init=8, v_init=0.5)
+    tracker = MVSRValueTracker(rho_min=0.875, rho_max=0.96, target_kl=0.1, v_init=0.5)
     
     # Test data - binary rewards (0 or 1)
     batch_size = 8
@@ -112,18 +111,18 @@ def test_spo_advantage_computation():
     prompt_hashes = [f'prompt_{i}' for i in range(batch_size)]
     
     # Compute advantages
-    advantages, returns = compute_spo_advantage(
-        token_level_rewards=token_level_rewards,
+    advantages, returns = compute_mvsr_advantage(
+        token_level_scores=token_level_rewards,
         response_mask=response_mask,
         value_tracker=tracker,
-        prompt_hashes=prompt_hashes,
+        sample_ids=prompt_hashes,
         kl_divergences=kl_divergences,
         normalize_globally=True
     )
     
     assert advantages.shape == token_level_rewards.shape, "Advantages should have same shape as rewards"
     assert returns.shape == token_level_rewards.shape, "Returns should have same shape as rewards"
-    assert torch.allclose(advantages, returns), "In SPO, advantages should equal returns"
+    assert torch.allclose(advantages, returns), "In MVSR, advantages should equal returns"
     
     # Check that Beta parameters are tracked per-prompt
     assert len(tracker.prompt_alpha) == batch_size, "Should track each prompt"
@@ -131,7 +130,7 @@ def test_spo_advantage_computation():
     
     # Test multiple updates with same prompts
     for _ in range(5):
-        advantages, returns = compute_spo_advantage(
+        advantages, returns = compute_mvsr_advantage(
             token_level_rewards, response_mask, tracker, prompt_hashes, kl_divergences
         )
     
@@ -139,11 +138,11 @@ def test_spo_advantage_computation():
     print(f"✓ Multiple updates working: {len(tracker.prompt_alpha)} prompts tracked")
 
 
-def test_spo_unified_advantage():
-    """Test unified SPO advantage computation for both text and multimodal scenarios."""
-    print("\nTesting unified SPO advantage computation...")
+def test_mvsr_unified_advantage():
+    """Test unified MVSR advantage computation for both text and multimodal scenarios."""
+    print("\nTesting unified MVSR advantage computation...")
     
-    tracker = SPOValueTracker(rho_min=0.875, rho_max=0.96, target_kl=0.1, n_init=8, v_init=0.5)
+    tracker = MVSRValueTracker(rho_min=0.875, rho_max=0.96, target_kl=0.1, v_init=0.5)
     
     # Test data - binary rewards
     batch_size = 6
@@ -156,11 +155,11 @@ def test_spo_unified_advantage():
     prompt_hashes = [f'prompt_{i}' for i in range(batch_size)]
     
     # Test unified advantage computation (works for both text-only and multimodal)
-    advantages, returns = compute_spo_advantage(
-        token_level_rewards=token_level_rewards,
+    advantages, returns = compute_mvsr_advantage(
+        token_level_scores=token_level_rewards,
         response_mask=response_mask,
         value_tracker=tracker,
-        prompt_hashes=prompt_hashes,
+        sample_ids=prompt_hashes,
         normalize_globally=True
     )
     
@@ -175,13 +174,12 @@ def test_spo_unified_advantage():
     print(f"  Works for both text-only and multimodal scenarios")
 
 
-def test_spo_prioritized_sampler():
-    """Test SPO prioritized sampling."""
-    print("\nTesting SPO prioritized sampling...")
+def test_mvsr_prioritized_sampler():
+    """Test MVSR prioritized sampling."""
+    print("\nTesting MVSR prioritized sampling...")
     
-    sampler = SPOPrioritizedSampler(
-        priority_alpha=0.6,
-        priority_beta=0.4
+    sampler = MVSRPrioritizedSampler(
+        priority_alpha=0.6
     )
     
     # Test priority updates
@@ -199,22 +197,16 @@ def test_spo_prioritized_sampler():
     assert probabilities[2] > probabilities[1], "Sample with higher advantage should have higher probability"
     assert probabilities[0] > probabilities[3], "Sample with higher advantage should have higher probability"
     
-    # Test importance weights
-    weights = sampler.get_importance_weights(sample_ids, probabilities)
-    assert len(weights) == len(sample_ids), "Weights should match sample count"
-    assert torch.all(weights > 0), "All weights should be positive"
-    
     print(f"✓ Prioritized sampling working")
     print(f"  Probabilities: {probabilities.numpy()}")
-    print(f"  Importance weights: {weights.numpy()}")
 
 
 def test_advantage_estimator_enum():
-    """Test that SPO is properly added to the enum."""
+    """Test that MVSR is properly added to the enum."""
     print("\nTesting AdvantageEstimator enum...")
     
-    assert hasattr(AdvantageEstimator, 'SPO'), "AdvantageEstimator should have SPO"
-    assert AdvantageEstimator.SPO == 'spo', "SPO enum value should be 'spo'"
+    assert hasattr(AdvantageEstimator, 'MVSR'), "AdvantageEstimator should have MVSR"
+    assert AdvantageEstimator.MVSR == 'mvsr', "MVSR enum value should be 'mvsr'"
     
     # Test all supported estimators
     supported_estimators = [
@@ -223,7 +215,7 @@ def test_advantage_estimator_enum():
         AdvantageEstimator.REINFORCE_PLUS_PLUS,
         AdvantageEstimator.REMAX,
         AdvantageEstimator.RLOO,
-        AdvantageEstimator.SPO
+        AdvantageEstimator.MVSR
     ]
     
     print(f"✓ All {len(supported_estimators)} advantage estimators available:")
@@ -232,20 +224,20 @@ def test_advantage_estimator_enum():
 
 
 def main():
-    """Run all SPO tests."""
+    """Run all MVSR tests."""
     print("=" * 60)
-    print("SPO (Single-stream Policy Optimization) Implementation Tests")
+    print("MVSR (Multimodal Vanilla Single-Rollout) Implementation Tests")
     print("=" * 60)
     
     try:
         test_advantage_estimator_enum()
-        test_spo_value_tracker()
-        test_spo_advantage_computation()
-        test_spo_unified_advantage()
-        test_spo_prioritized_sampler()
+        test_mvsr_value_tracker()
+        test_mvsr_advantage_computation()
+        test_mvsr_unified_advantage()
+        test_mvsr_prioritized_sampler()
         
         print("\n" + "=" * 60)
-        print("✅ All SPO tests passed successfully!")
+        print("✅ All MVSR tests passed successfully!")
         print("=" * 60)
         
     except Exception as e:

@@ -1,311 +1,177 @@
-# EasyR1: An Efficient, Scalable, Multi-Modality RL Training Framework
+# MSSR
 
-[![GitHub Repo stars](https://img.shields.io/github/stars/hiyouga/EasyR1)](https://github.com/hiyouga/EasyR1/stargazers)
-[![Twitter](https://img.shields.io/twitter/follow/llamafactory_ai)](https://twitter.com/llamafactory_ai)
+This repository is an [EasyR1](https://github.com/hiyouga/EasyR1)/[veRL](https://github.com/volcengine/verl) fork for single-rollout multimodal RL on visual math reasoning.
 
-### Used by [Amazon Web Services](https://aws.amazon.com/cn/blogs/china/building-llm-model-hub-based-on-llamafactory-and-easyr1/)
+The terminology in this folder is:
 
-This project is a clean fork of the original [veRL](https://github.com/volcengine/verl) project to support vision language models, we thank all the authors for providing such a high-performance RL training framework.
+- **MVSR**: Multimodal Vanilla Single-Rollout. This is the vanilla baseline: one rollout per prompt, prompt-level value tracking, and global advantage normalization.
+- **MSSR**: Multimodal Stabilized Single-Rollout. This is our approach: MVSR plus the stabilization recipe used by the main MSSR scripts, especially entropy-shaped advantages and the conservative training settings in `examples/config_mssr.yaml`.
 
-EasyR1 is efficient and scalable due to the design of **[HybirdEngine](https://arxiv.org/abs/2409.19256)** and the latest release of **[vLLM](https://github.com/vllm-project/vllm)**'s SPMD mode.
+## What This Approach Does
 
-## Features
+GRPO samples multiple responses per prompt and uses within-group relative rewards. MVSR/MSSR instead uses one response per prompt:
 
-- Supported models
-  - Llama3/Qwen2/Qwen2.5/Qwen3 language models
-  - Qwen2/Qwen2.5-VL vision language models
-  - DeepSeek-R1 distill models
+1. Generate one rollout for each multimodal prompt with `worker.rollout.n=1`.
+2. Use a persistent prompt-level value tracker as the baseline.
+3. Compute the advantage as the outcome score minus the tracked prompt baseline.
+4. Normalize advantages globally across the batch for stable policy updates.
+5. For MSSR, add entropy-based advantage shaping and the stabilized launch settings used by `examples/7b_mssr.sh` and `examples/3b_mssr.sh`.
 
-- Supported algorithms
-  - GRPO
-  - DAPO
-  - Reinforce++
-  - ReMax
-  - RLOO
-  - **SPO (Single-stream Policy Optimization)** - Novel algorithm with persistent value tracking and multimodal support
+MVSR is the baseline. MSSR is the stabilized method built on top of it.
 
-- Supported datasets
-  - Any text, vision-text dataset in a [specific format](#custom-dataset)
+## Main Code Paths
 
-- Supported tricks
-  - Padding-free training
-  - Resuming from checkpoint
-  - Wandb & SwanLab & Mlflow & Tensorboard tracking
+| File | Purpose |
+| --- | --- |
+| `verl/trainer/core_algos.py` | MVSR value tracker, prioritized sampler, and advantage computation. |
+| `verl/trainer/ray_trainer.py` | MVSR initialization, value updates, entropy shaping, and optional text-only KL. |
+| `verl/trainer/config.py` | `mvsr_*` config fields and MSSR stabilization knobs. |
+| `examples/config_mssr.yaml` | Main MSSR config. |
+| `examples/reward_function/math.py` | Math reward for visual reasoning scripts. |
+| `tests/test_mvsr.py` | MVSR unit tests. |
 
-## Requirements
+## Scripts
 
-### Software Requirements
+| Variant | Script | Description |
+| --- | --- | --- |
+| MSSR | `examples/7b_mssr.sh` | Qwen2.5-VL-7B stabilized single-rollout method. |
+| MSSR | `examples/3b_mssr.sh` | Qwen2.5-VL-3B stabilized single-rollout method. |
+| MVSR | `examples/7b_mvsr.sh` | Qwen2.5-VL-7B vanilla single-rollout baseline. |
+| MVSR | `examples/3b_mvsr.sh` | Qwen2.5-VL-3B vanilla single-rollout baseline. |
+| MVSR + text KL | `examples/7b_mvsr_text_kl.sh` | Adds text-only KL regularization. |
+| MVSR + entropy loss | `examples/7b_mvsr_entropy_loss.sh` | Adds entropy loss regularization. |
+| MVSR per-sample rho | `examples/7b_mvsr_per_sample_rho.sh` | Enables per-sample forgetting rates. |
+| GRPO | `examples/grpo.sh`, `examples/3b_grpo.sh` | Group-rollout baselines. |
+| REINFORCE++ | `examples/reinforce.sh`, `examples/3b_reinforce.sh` | REINFORCE-style baselines. |
+| RLOO | `examples/rloo.sh`, `examples/3b_rloo.sh` | Leave-one-out baselines. |
 
-- Python 3.9+
-- transformers>=4.51.0
-- flash-attn>=2.4.3
-- vllm>=0.8.3
+Some scripts export internal proxy settings or run a post-training GPU matrix multiplication check. Remove those lines if they do not apply to your environment.
 
-We provide a [Dockerfile](./Dockerfile) to easily build environments.
-
-We recommend using the [pre-built docker image](https://hub.docker.com/r/hiyouga/verl) in EasyR1.
-
-```bash
-docker pull hiyouga/verl:ngc-th2.7.0-cu12.6-vllm0.9.1
-```
-
-### Hardware Requirements
-
-\* *estimated*
-
-| Method                   | Bits |  1.5B  |   3B   |   7B   |   32B   |   72B   |
-| ------------------------ | ---- | ------ | ------ | ------ | ------- | ------- |
-| GRPO Full Fine-Tuning    |  AMP | 2*24GB | 4*40GB | 8*40GB | 16*80GB | 32*80GB |
-| GRPO Full Fine-Tuning    | BF16 | 1*24GB | 1*40GB | 4*40GB |  8*80GB | 16*80GB |
-
-> [!NOTE]
-> Use `worker.actor.fsdp.torch_dtype=bf16` and `worker.actor.optim.strategy=adamw_bf16` to enable bf16 training.
->
-> We are working hard to reduce the VRAM in RL training, LoRA support will be integrated in next updates.
-
-## Tutorial: Run Qwen2.5-VL GRPO on [Geometry3K](https://huggingface.co/datasets/hiyouga/geometry3k) Dataset in Just 3 Steps
-
-![image](assets/qwen2_5_vl_7b_geo.png)
-
-### Installation
+## Installation
 
 ```bash
-git clone https://github.com/hiyouga/EasyR1.git
-cd EasyR1
+cd mssr
 pip install -e .
 ```
 
-### GRPO Training
+Known repository issue: `setup.py` reads `requirements.txt`, but this folder currently does not contain `requirements.txt`. If editable install fails with `FileNotFoundError`, copy the matching [EasyR1](https://github.com/hiyouga/EasyR1) requirements file into this folder or install dependencies manually before running `pip install -e .`.
+
+## Run MSSR
 
 ```bash
-bash examples/qwen2_5_vl_7b_geo3k_grpo.sh
+cd mssr
+bash examples/7b_mssr.sh
 ```
 
-### Merge Checkpoint in Hugging Face Format
+The main 7B MSSR script uses:
 
 ```bash
-python3 scripts/model_merger.py --local_dir checkpoints/easy_r1/exp_name/global_step_1/actor
+python -m verl.trainer.main \
+  config=examples/config_mssr.yaml \
+  data.train_files=Osilly/Vision-R1-rl@train \
+  data.val_files=Osilly/Vision-R1-rl@test \
+  algorithm.mvsr_run_initialization=true \
+  algorithm.text_kl_enabled=false \
+  algorithm.use_entropy_shaping=true \
+  worker.actor.model.model_path=Qwen/Qwen2.5-VL-7B-Instruct \
+  trainer.experiment_name=7b_mssr \
+  trainer.n_gpus_per_node=8
 ```
 
-> [!TIP]
-> If you encounter issues with connecting to Hugging Face, consider using `export HF_ENDPOINT=https://hf-mirror.com`.
->
-> If you want to use SwanLab logger, consider using `bash examples/qwen2_5_vl_7b_geo3k_swanlab.sh`.
-
-## SPO (Single-stream Policy Optimization): Accurate Implementation
-
-We have implemented the **Single-stream Policy Optimization (SPO)** algorithm based on the paper [arXiv:2509.13232](https://arxiv.org/abs/2509.13232) with **complete accuracy** to the paper's specifications. SPO addresses key limitations of group-based methods like GRPO by:
-
-- **Eliminating degenerate groups** through per-prompt persistent value tracking
-- **Removing synchronization barriers** via single-stream operation (n=1) for 4.35× throughput speedup
-- **Providing stable learning signals** with per-prompt baselines and global batch normalization
-- **Supporting both text-only and multimodal scenarios** with unified Bayesian value tracking
-
-### SPO Training Examples
-
-#### Text-only SPO on Math Reasoning
-```bash
-bash examples/qwen2_5_7b_math_spo.sh
-```
-
-#### Vision-Language SPO on Geometry Problems
-```bash
-bash examples/qwen2_5_vl_7b_geo3k_spo.sh
-```
-
-### Key SPO Features (Section 4.1 - Paper-Accurate)
-
-1. **Beta Distribution Value Function**: V(x) ~ Beta(α(x), β(x)) with V̂(x) = α/(α+β) (Equation 5)
-2. **Per-Prompt Informed Initialization (Algorithm 2)**: 
-   - For each prompt x, collect n_0=8 outcomes with initial policy π_0
-   - Compute v̂_0(x) = (1/n_0) * Σ r^(k) (average of outcomes)
-   - Set α_0(x) = N_0 * v̂_0(x), β_0(x) = N_0 * (1 - v̂_0(x)) where N_0 = 1/(1-ρ_min) = 8
-3. **Bayesian Updates with Forgetting**: α_new = ρ*α + r, β_new = ρ*β + (1-r) (Equation 7)
-4. **KL-Adaptive Forgetting Rates**: ρ ∈ [0.875, 0.96] adapts based on policy change rate
-5. **Global Batch Normalization**: Normalizes advantages across entire batch after per-prompt baseline subtraction
-6. **Single-Stream Operation**: Uses n=1 (one response per prompt) unlike GRPO's n>1 groups
-7. **Unified Multimodal Support**: Same Beta-Bernoulli formulation works for text-only and vision-language
-
-**Algorithm Initialization**: The trainer implements Algorithm 2 from Appendix A when `spo_run_initialization=true` (default). At the start of training, it collects `n_0` samples per prompt using the initial policy, computes per-prompt success rates v̂_0(x), and initializes the value tracker with α_0(x) = N_0 * v̂_0(x) and β_0(x) = N_0 * (1 - v̂_0(x)). This provides accurate, data-driven initialization. Set `spo_run_initialization=false` to skip initialization and use fallback (v_init=0.5 for all prompts) for faster startup, useful for debugging.
-
-### Implementation Highlights
-
-From the paper (Section D: Training and Evaluation Details):
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `run_init` | true | Run Algorithm 2 initialization (true=paper-accurate, false=faster) |
-| `N_0` | 8 | Effective window size: 1/(1-ρ_min) (Algorithm 2) |
-| `n_0` | 2-5 | Samples per prompt for initialization (if run_init=true) |
-| `v̂_0(x)` | computed | Per-prompt: (1/n_0) * Σ r^(k) (if run_init=true) |
-| `α_0(x)` | N_0 * v̂_0(x) | Initial α for prompt x (if run_init=true) |
-| `β_0(x)` | N_0 * (1-v̂_0(x)) | Initial β for prompt x (if run_init=true) |
-| `v_fallback` | 0.5 | Fallback (if run_init=false or for unseen prompts) |
-| `ρ_min` | 0.875 | Minimum forgetting rate (W=8, fast) |
-| `ρ_max` | 0.96 | Maximum forgetting rate (W=25, slow) |
-| `n` | 1 | Single response per prompt |
-| `batch_size` | 2048 | 8× GRPO prompt batch (matches total compute) |
-| `temperature` | 1.0 | Training sampling temperature |
-| `top_p` | 1.0 | Training top-p sampling |
-
-### Performance Improvements (from paper)
-
-On hard math benchmarks with Qwen3-8B:
-- **Average maj@32**: +3.4 pp over GRPO
-- **BRUMO 25**: +7.3 pp absolute gain
-- **AIME 25**: +4.4 pp absolute gain
-- **HMMT 25**: +3.3 pp absolute gain
-- **Consistent pass@k gains** across all evaluated k values
-
-### Documentation
-
-See [SPO_IMPLEMENTATION.md](SPO_IMPLEMENTATION.md) for detailed implementation documentation, including:
-- Per-prompt value tracking architecture
-- Bayesian update mechanism with adaptive forgetting
-- Global batch normalization algorithm
-- Comparison with GRPO
-- Complete parameter specifications
-
-The SPO implementation uses `config_spo.yaml` with paper-accurate hyperparameters that work for both text-only and vision-language scenarios.
-
-## Custom Dataset
-
-Please refer to the example datasets to prepare your own dataset.
-
-- Text dataset: https://huggingface.co/datasets/hiyouga/math12k
-- Image-text dataset: https://huggingface.co/datasets/hiyouga/geometry3k
-- Multi-image-text dataset: https://huggingface.co/datasets/hiyouga/journeybench-multi-image-vqa
-- Text-image mixed dataset: https://huggingface.co/datasets/hiyouga/rl-mixed-dataset
-
-## How to Understand GRPO in EasyR1
-
-![image](assets/easyr1_grpo.png)
-
-- To learn about the GRPO algorithm, you can refer to [Hugging Face's blog](https://huggingface.co/docs/trl/v0.16.1/en/grpo_trainer).
-
-## How to Run 70B+ Model in Multi-node Environment
-
-1. Start the Ray head node.
+For the 3B MSSR run:
 
 ```bash
-ray start --head --port=6379 --dashboard-host=0.0.0.0
+bash examples/3b_mssr.sh
 ```
 
-2. Start the Ray worker node and connect to the head node.
+## Run MVSR Baselines
 
 ```bash
-ray start --address=<head_node_ip>:6379
+bash examples/7b_mvsr.sh
+bash examples/3b_mvsr.sh
 ```
 
-3. Check the Ray resource pool.
+MVSR keeps the same single-rollout value-tracking machinery but does not enable the MSSR stabilization recipe by default.
+
+## Configuration Reference
+
+The main config is `examples/config_mssr.yaml`.
+
+### MVSR Fields
+
+| Field | Meaning |
+| --- | --- |
+| `algorithm.adv_estimator=mvsr` | Selects Multimodal Vanilla Single-Rollout. |
+| `algorithm.mvsr_run_initialization` | Runs initial sampling to initialize prompt values. |
+| `algorithm.mvsr_n_init` | Number of initialization responses per prompt. |
+| `algorithm.mvsr_rho_min`, `algorithm.mvsr_rho_max` | Forgetting-rate bounds for the prompt value tracker. |
+| `algorithm.mvsr_target_kl` | KL target for adaptive forgetting. |
+| `algorithm.mvsr_v_init` | Fallback value for unseen prompts or skipped initialization. |
+| `algorithm.mvsr_normalize_globally` | Normalizes advantages globally across the batch. |
+| `algorithm.mvsr_per_sample_rho` | Enables per-sample forgetting rates. |
+| `algorithm.mvsr_d_half` | Half-life scale for per-sample rho. |
+| `algorithm.mvsr_use_uncertainty_weighting` | Enables uncertainty-weighted prioritized sampling. |
+| `algorithm.mvsr_kl_window_size` | Window size for global KL tracking. |
+
+### MSSR Stabilization Fields
+
+| Field | Meaning |
+| --- | --- |
+| `algorithm.use_entropy_shaping` | Main MSSR scripts enable this. |
+| `algorithm.entropy_alpha` | Weight for entropy-shaped advantages. |
+| `algorithm.entropy_kappa` | Cap for the entropy shaping term relative to advantage magnitude. |
+| `algorithm.use_entropy_loss` | Optional entropy loss regularizer for ablations. |
+| `algorithm.entropy_coef` | Entropy loss coefficient. |
+| `algorithm.text_kl_enabled` | Optional text-only KL regularization. |
+| `worker.actor.max_grad_norm` | Stabilized MSSR scripts use tighter gradient clipping. |
+| `worker.rollout.n=1` | Required for the single-rollout setting. |
+
+## Data
+
+Default config:
+
+```yaml
+data.train_files: XenoZLH/MMRL30k@train
+data.val_files: wodeni/mathvista@testmini
+data.prompt_key: problem
+data.answer_key: answer
+data.image_key: images
+data.format_prompt: ./examples/format_prompt/math.jinja
+```
+
+The main scripts override data to `Osilly/Vision-R1-rl@train` and `Osilly/Vision-R1-rl@test`.
+
+## Evaluation And Checkpoint Merge
+
+Run the local evaluation script after editing model/checkpoint paths:
 
 ```bash
-ray status
+bash examples/eval.sh
 ```
 
-4. Run training script on the Ray head node only.
+Merge checkpoints with:
 
 ```bash
-bash examples/qwen2_5_vl_7b_geo3k_grpo.sh
+python3 scripts/model_merger.py \
+  --local_dir checkpoints/mssr/<experiment_name>/global_step_<step>/actor
 ```
 
-See the **[veRL's official doc](https://verl.readthedocs.io/en/latest/start/multinode.html)** for more details about multi-node training and Ray debugger.
+## Practical Notes
 
-## Other Baselines
-
-We also reproduced the following two baselines of the [R1-V](https://github.com/deep-agent/R1-V) project.
-- [CLEVR-70k-Counting](examples/baselines/qwen2_5_vl_3b_clevr.sh): Train the Qwen2.5-VL-3B-Instruct model on counting problem.
-- [GeoQA-8k](examples/baselines/qwen2_5_vl_3b_geoqa8k.sh): Train the Qwen2.5-VL-3B-Instruct model on GeoQA problem.
-
-## Performance Baselines
-
-See [baselines.md](assets/baselines.md).
-
-## Awesome Work using EasyR1
-
-- **MMR1**: Advancing the Frontiers of Multimodal Reasoning. [![[code]](https://img.shields.io/github/stars/LengSicong/MMR1)](https://github.com/LengSicong/MMR1)
-- **Vision-R1**: Incentivizing Reasoning Capability in Multimodal Large Language Models. [![[code]](https://img.shields.io/github/stars/Osilly/Vision-R1)](https://github.com/Osilly/Vision-R1) [![[arxiv]](https://img.shields.io/badge/arxiv-2503.06749-blue)](https://arxiv.org/abs/2503.06749)
-- **Seg-Zero**: Reasoning-Chain Guided Segmentation via Cognitive Reinforcement. [![[code]](https://img.shields.io/github/stars/dvlab-research/Seg-Zero)](https://github.com/dvlab-research/Seg-Zero) [![[arxiv]](https://img.shields.io/badge/arxiv-2503.06520-blue)](https://arxiv.org/abs/2503.06520)
-- **MetaSpatial**: Reinforcing 3D Spatial Reasoning in VLMs for the Metaverse. [![[code]](https://img.shields.io/github/stars/PzySeere/MetaSpatial)](https://github.com/PzySeere/MetaSpatial) [![[arxiv]](https://img.shields.io/badge/arxiv-2503.18470-blue)](https://arxiv.org/abs/2503.18470)
-- **Temporal-R1**: Envolving Temporal Reasoning Capability into LMMs via Temporal Consistent Reward. [![[code]](https://img.shields.io/github/stars/appletea233/Temporal-R1)](https://github.com/appletea233/Temporal-R1)
-- **NoisyRollout**: Reinforcing Visual Reasoning with Data Augmentation. [![[code]](https://img.shields.io/github/stars/John-AI-Lab/NoisyRollout)](https://github.com/John-AI-Lab/NoisyRollout) [![[arxiv]](https://img.shields.io/badge/arxiv-2504.13055-blue)](https://arxiv.org/pdf/2504.13055)
-- **GUI-R1**: A Generalist R1-Style Vision-Language Action Model For GUI Agents. [![[code]](https://img.shields.io/github/stars/ritzz-ai/GUI-R1)](https://github.com/ritzz-ai/GUI-R1) [![[arxiv]](https://img.shields.io/badge/arxiv-2504.10458-blue)](https://arxiv.org/abs/2504.10458)
-- **R1-Track**: Direct Application of MLLMs to Visual Object Tracking via Reinforcement Learning. [![[code]](https://img.shields.io/github/stars/Wangbiao2/R1-Track)](https://github.com/Wangbiao2/R1-Track)
-- **VisionReasoner**: Unified Visual Perception and Reasoning via Reinforcement Learning. [![[code]](https://img.shields.io/github/stars/dvlab-research/VisionReasoner)](https://github.com/dvlab-research/VisionReasoner) [![[arxiv]](https://img.shields.io/badge/arxiv-2505.12081-blue)](https://arxiv.org/abs/2505.12081)
-- **MM-UPT**: Unsupervised Post-Training for Multi-Modal LLM Reasoning via GRPO. [![[code]](https://img.shields.io/github/stars/waltonfuture/MM-UPT)](https://github.com/waltonfuture/MM-UPT) [![[arxiv]](https://img.shields.io/badge/arxiv-2505.22453-blue)](https://arxiv.org/pdf/2505.22453)
-- **RL-with-Cold-Start**: Advancing Multimodal Reasoning via Reinforcement Learning with Cold Start. [![[code]](https://img.shields.io/github/stars/waltonfuture/RL-with-Cold-Start)](https://github.com/waltonfuture/RL-with-Cold-Start) [![[arxiv]](https://img.shields.io/badge/arxiv-2505.22334-blue)](https://arxiv.org/pdf/2505.22334)
-- **ViGoRL**: Grounded Reinforcement Learning for Visual Reasoning. [![[code]](https://img.shields.io/github/stars/Gabesarch/grounded-rl)](https://github.com/Gabesarch/grounded-rl) [![[arxiv]](https://img.shields.io/badge/arxiv-2505.22334-blue)](https://arxiv.org/abs/2505.23678)
-- **Revisual-R1**: Advancing Multimodal Reasoning: From Optimized Cold Start to Staged Reinforcement Learning. [![[code]](https://img.shields.io/github/stars/CSfufu/Revisual-R1)](https://github.com/CSfufu/Revisual-R1) [![[arxiv]](https://img.shields.io/badge/arxiv-2506.04207-blue)](https://arxiv.org/abs/2506.04207)
-- **SophiaVL-R1**: Reinforcing MLLMs Reasoning with Thinking Reward. [![[code]](https://img.shields.io/github/stars/kxfan2002/SophiaVL-R1)](https://github.com/kxfan2002/SophiaVL-R1) [![[arxiv]](https://img.shields.io/badge/arxiv-2505.17018-blue)](https://arxiv.org/abs/2505.17018)
-- **Vision-Matters**: Simple Visual Perturbations Can Boost Multimodal Math Reasoning. [![[code]](https://img.shields.io/github/stars/YutingLi0606/Vision-Matters)](https://github.com/YutingLi0606/Vision-Matters) [![[arxiv]](https://img.shields.io/badge/arxiv-2506.09736-blue)](https://arxiv.org/abs/2506.09736)
-- **VTool-R1**: VLMs Learn to Think with Images via Reinforcement Learning on Multimodal Tool Use. [![[code]](https://img.shields.io/github/stars/VTOOL-R1/vtool-r1)](https://github.com/VTOOL-R1/vtool-r1) [![[arxiv]](https://img.shields.io/badge/arxiv-2505.19255-blue)](https://arxiv.org/abs/2505.19255)
-
-## TODO
-
-- Support LoRA (high priority).
-- Support ulysses parallelism for VLMs (middle priority).
-- Support more VLM architectures.
-
-> [!NOTE]
-> We will not provide scripts for supervised fine-tuning and inference in this project. If you have such requirements, we recommend using [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory).
-
-### Known bugs
-
-These features are temporarily disabled for now, we plan to fix them one-by-one in the future updates.
-
-- Vision language models are not compatible with ulysses parallelism yet.
-
-## Discussion Group
-
-👋 Join our [WeChat group](assets/wechat.jpg).
-
-## FAQs
-
-> ValueError: Image features and image tokens do not match: tokens: 8192, features 9800
-
-Increase the `data.max_prompt_length` or reduce the `data.max_pixels`.
-
-> RuntimeError: CUDA Error: out of memory at /workspace/csrc/cumem_allocator.cpp:62
-
-Reduce the `worker.rollout.gpu_memory_utilization` and enable `worker.actor.offload.offload_params`.
-
-> RuntimeError: 0 active drivers ([]). There should only be one.
-
-Uninstall `deepspeed` from the current python environment.
+- Keep `worker.rollout.n=1` for MVSR and MSSR experiments.
+- MVSR is the vanilla baseline; MSSR is the stabilized single-rollout method.
+- `7b_visual_reweight_entropy_anneal.sh` contains experimental CLI fields that are not present in the current config.
+- Vision-language models inherit [EasyR1](https://github.com/hiyouga/EasyR1)'s Ray, FSDP, vLLM, and Ulysses limitations.
 
 ## Citation
 
-Core contributors: [Yaowei Zheng](https://github.com/hiyouga), [Junting Lu](https://github.com/AL-377), [Shenzhi Wang](https://github.com/Shenzhi-Wang), [Zhangchi Feng](https://github.com/BUAADreamer), [Dongdong Kuang](https://github.com/Kuangdd01) and Yuwen Xiong
-
-We also thank Guangming Sheng and Chi Zhang for helpful discussions.
+This framework builds on [EasyR1](https://github.com/hiyouga/EasyR1) and [veRL](https://github.com/volcengine/verl). If you use MSSR/MVSR, please cite:
 
 ```bibtex
-@misc{zheng2025easyr1,
-  title        = {EasyR1: An Efficient, Scalable, Multi-Modality RL Training Framework},
-  author       = {Yaowei Zheng, Junting Lu, Shenzhi Wang, Zhangchi Feng, Dongdong Kuang, Yuwen Xiong},
-  howpublished = {\url{https://github.com/hiyouga/EasyR1}},
-  year         = {2025}
-}
-```
-
-For the SPO algorithm implementation:
-
-```bibtex
-@article{xu2025single,
-  title={Single-stream Policy Optimization},
-  author={Xu, Zhongwen and Ding, Zihan},
-  journal={arXiv preprint arXiv:2509.13232},
+@article{liu2025stable,
+  title={Stable and Efficient Single-Rollout RL for Multimodal Reasoning},
+  author={Liu, Rui and Yu, Dian and Ke, Lei and Liu, Haolin and Zhou, Yujun and Liang, Zhenwen and Mi, Haitao and Tokekar, Pratap and Yu, Dong},
+  journal={arXiv preprint arXiv:2512.18215},
   year={2025}
-}
-```
-
-We recommend to also cite the original work.
-
-```bibtex
-@article{sheng2024hybridflow,
-  title   = {HybridFlow: A Flexible and Efficient RLHF Framework},
-  author  = {Guangming Sheng and Chi Zhang and Zilingfeng Ye and Xibin Wu and Wang Zhang and Ru Zhang and Yanghua Peng and Haibin Lin and Chuan Wu},
-  year    = {2024},
-  journal = {arXiv preprint arXiv: 2409.19256}
 }
 ```

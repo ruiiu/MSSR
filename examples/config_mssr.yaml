@@ -27,29 +27,29 @@ data:
   max_pixels: 4194304
   filter_overlong_prompts: true
 algorithm:
-  adv_estimator: spo  # Single-stream Policy Optimization
+  adv_estimator: mvsr  # Multimodal Vanilla Single-Rollout
   disable_kl: false
   use_kl_loss: true
   kl_penalty: low_var_kl
   kl_coef: 0.01
   online_filtering: false
   
-  # Standard SPO parameters (STABILIZED)
-  spo_run_initialization: true
-  spo_n_init: 1
-  spo_rho_min: 0.875
-  spo_rho_max: 0.96
-  spo_target_kl: 0.01 
-  spo_v_init: 0.5
-  spo_normalize_globally: true
-  spo_eps: 1e-6
-  spo_per_sample_rho: false
-  spo_d_half: 0.06
-  spo_use_uncertainty_weighting: false
-  spo_priority_alpha: 1.0
-  spo_priority_epsilon: 1e-6
+  # Standard MVSR parameters (STABILIZED)
+  mvsr_run_initialization: true
+  mvsr_n_init: 1
+  mvsr_rho_min: 0.875
+  mvsr_rho_max: 0.96
+  mvsr_target_kl: 0.01 
+  mvsr_v_init: 0.5
+  mvsr_normalize_globally: true
+  mvsr_eps: 1e-6
+  mvsr_per_sample_rho: false
+  mvsr_d_half: 0.06
+  mvsr_use_uncertainty_weighting: false
+  mvsr_priority_alpha: 1.0
+  mvsr_priority_epsilon: 1e-6
   
-  spo_kl_window_size: 20
+  mvsr_kl_window_size: 20
   
   # Entropy-based advantage shaping (applicable to all algorithms)
   use_entropy_shaping: false
@@ -89,7 +89,7 @@ worker:
     global_batch_size: 128  # Smaller batch due to dual-stream overhead
     micro_batch_size_per_device_for_update: 4
     micro_batch_size_per_device_for_experience: 16
-    max_grad_norm: 0.5  # REDUCED: Tighter gradient clipping for SPO stability
+    max_grad_norm: 0.5  # REDUCED: Tighter gradient clipping for MVSR stability
     padding_free: true
     ulysses_size: 1
     model:
@@ -113,7 +113,7 @@ worker:
       offload_optimizer: true
 
   rollout:
-    n: 1  # SPO uses single-stream
+    n: 1  # MVSR uses single-rollout
     temperature: 1.0
     top_p: 1.0
     top_k: -1

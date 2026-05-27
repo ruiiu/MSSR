@@ -84,8 +84,8 @@ def main():
             'tokenizer_path': 'checkpoints/mssr/7b_mssr_vision/global_step_120/actor/huggingface/'
         },
         'MVSR': {
-            'json_path': 'results/7b_spo_vision_120/mmk12.json',
-            'tokenizer_path': 'checkpoints/mssr/7b_spo_vision/global_step_120/actor/huggingface/'
+            'json_path': 'results/7b_mvsr_vision_120/mmk12.json',
+            'tokenizer_path': 'checkpoints/mssr/7b_mvsr_vision/global_step_120/actor/huggingface/'
         }
     }
     

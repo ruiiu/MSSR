@@ -78,7 +78,7 @@ class AlgorithmConfig:
     lam: float = 1.0
     """lambda value for ppo gae advantage estimator"""
     adv_estimator: str = "grpo"
-    """advantage estimator, support `gae`, `grpo`, `reinforce_plus_plus`, `remax`, `rloo`, `spo`"""
+    """advantage estimator, support `gae`, `grpo`, `reinforce_plus_plus`, `remax`, `rloo`, `mvsr`"""
     disable_kl: bool = False
     """disable reference model"""
     use_kl_loss: bool = False
@@ -102,49 +102,49 @@ class AlgorithmConfig:
     filter_high: float = 0.99
     """filter out high reward samples if online filtering"""
     
-    # SPO-specific configuration parameters (from paper: arXiv:2509.13232)
-    spo_rho_min: float = 0.875
-    """minimum forgetting rate for SPO (corresponds to W_max=25)"""
-    spo_rho_max: float = 0.96
-    """maximum forgetting rate for SPO (corresponds to W_min=8)"""
-    spo_target_kl: float = 0.06
-    """target KL divergence for adaptive forgetting in SPO (used with global adaptive rho)"""
-    spo_run_initialization: bool = True
+    # MVSR-specific configuration parameters for the vanilla single-rollout baseline
+    mvsr_rho_min: float = 0.875
+    """minimum forgetting rate for MVSR (corresponds to W_max=25)"""
+    mvsr_rho_max: float = 0.96
+    """maximum forgetting rate for MVSR (corresponds to W_min=8)"""
+    mvsr_target_kl: float = 0.06
+    """target KL divergence for adaptive forgetting in MVSR (used with global adaptive rho)"""
+    mvsr_run_initialization: bool = True
     """whether to run Algorithm initialization (run policy once through dataset). If False, uses fallback v_init for all prompts."""
-    spo_n_init: int = 1
+    mvsr_n_init: int = 1
     """number of times to sample each prompt during initialization to get better initial value estimates"""
-    spo_v_init: float = 0.5
-    """fallback value for prompts not in initialization set, or for all prompts if spo_run_initialization=False"""
-    spo_normalize_globally: bool = True
-    """whether to normalize advantages globally across the batch in SPO (critical feature)"""
-    spo_eps: float = 1e-6
-    """epsilon for numerical stability in SPO"""
+    mvsr_v_init: float = 0.5
+    """fallback value for prompts not in initialization set, or for all prompts if mvsr_run_initialization=False"""
+    mvsr_normalize_globally: bool = True
+    """whether to normalize advantages globally across the batch in MVSR (critical feature)"""
+    mvsr_eps: float = 1e-6
+    """epsilon for numerical stability in MVSR"""
     
-    # Per-prompt rho calculation (reference implementation style)
-    spo_per_sample_rho: bool = False
+    # Per-prompt rho calculation (project baseline style)
+    mvsr_per_sample_rho: bool = False
     """use per-sample rho calculation (True) or global adaptive rho (False).
     Per-sample: each sample gets its own rho by comparing log probs when it reappears.
     Global: all samples use same rho based on global KL history."""
-    spo_d_half: float = 0.06
+    mvsr_d_half: float = 0.06
     """half-life parameter for exponential decay in per-prompt rho: ρ = 2^(-D/D_half)"""
     
-    # Note: SPO uses per-prompt value tracking with Bayesian updates
+    # Note: MVSR uses per-prompt value tracking with Bayesian updates
     # Works for both text-only and multimodal scenarios
     
-    # SPO Weighted Curriculum Sampling (reference implementation style)
-    spo_use_uncertainty_weighting: bool = True
+    # MVSR Weighted Curriculum Sampling (project baseline style)
+    mvsr_use_uncertainty_weighting: bool = True
     """enable uncertainty-based weighted curriculum sampling: weight = sqrt(p*(1-p))"""
-    spo_priority_alpha: float = 1.0
+    mvsr_priority_alpha: float = 1.0
     """scaling factor for uncertainty weights (1.0=linear, >1=emphasize high uncertainty)"""
-    spo_priority_epsilon: float = 1e-6
-    """epsilon for SPO prioritized sampling to avoid zero weights"""
+    mvsr_priority_epsilon: float = 1e-6
+    """epsilon for MVSR prioritized sampling to avoid zero weights"""
 
-    spo_kl_window_size: int = 20
+    mvsr_kl_window_size: int = 20
     """window size for computing average KL in global adaptive rho calculation"""
     
     # Entropy-based advantage shaping (applicable to all algorithms)
     use_entropy_shaping: bool = False
-    """enable entropy-based advantage shaping for all algorithms (PPO, GRPO, RLOO, SPO, etc.).
+    """enable entropy-based advantage shaping for all algorithms (PPO, GRPO, RLOO, MVSR, etc.).
     This encourages exploration by adding an entropy-based term to advantages.
     The formula is: ψ(H_t) = min(α·H_t^detach, |A_t|/κ)
     Can be used with any advantage estimator."""
@@ -165,7 +165,7 @@ class AlgorithmConfig:
     """enable entropy loss regularization to encourage exploration.
     This adds negative entropy to the policy gradient loss (maximize entropy = minimize -H).
     Different from entropy shaping which modifies advantages.
-    Can be used with or without SPO, PPO, or other algorithms."""
+    Can be used with or without MVSR, PPO, or other algorithms."""
     entropy_coef: float = 0.01
     """coefficient for entropy loss regularization.
     Higher values (e.g., 0.05-0.1) provide stronger exploration bonus,

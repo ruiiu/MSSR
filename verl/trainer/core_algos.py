@@ -73,10 +73,10 @@ class FixedKLController(KLController):
         pass
 
 
-class SPOValueTracker:
-    """Persistent per-prompt value tracker for SPO with Bayesian updates and KL-adaptive forgetting.
+class MVSRValueTracker:
+    """Persistent per-prompt value tracker for MVSR with Bayesian updates and KL-adaptive forgetting.
     
-    Based on the SPO paper: Single-stream Policy Optimization (arXiv:2509.13232)
+    MVSR is the project baseline for multimodal vanilla single-rollout training.
     This implements a per-prompt value tracker with forgetting rates that adapt based on KL divergence.
     
     For binary rewards {0, 1}, the value function follows a Beta distribution (Equation 5):
@@ -110,11 +110,11 @@ class SPOValueTracker:
     ):
         """
         Args:
-            rho_min: Minimum forgetting rate (corresponds to W_max=25 in paper)
-            rho_max: Maximum forgetting rate (corresponds to W_min=8 in paper)
+            rho_min: Minimum forgetting rate (W_max=25-style setting)
+            rho_max: Maximum forgetting rate (W_min=8-style setting)
             target_kl: Target KL divergence for adaptive forgetting (global method)
             v_init: Fallback value for prompts not in initialization set (default 0.5)
-            use_per_sample_rho: If True, use per-prompt rho calculation like reference implementation
+            use_per_sample_rho: If True, use per-prompt rho calculation using the tracked prompt history
             d_half: Half-life parameter for exponential decay (D_half = 0.06 in reference)
         
         Note:
@@ -192,7 +192,7 @@ class SPOValueTracker:
         """
         Initialize value tracker using Algorithm 2 from Appendix A.
         
-        This is called automatically by RayPPOTrainer._initialize_spo_from_dataset() 
+        This is called automatically by RayPPOTrainer._initialize_mvsr_from_dataset() 
         at the start of training (when global_step=0)
         
         For each sample, collect outcomes and compute per-sample initial value estimate:
@@ -239,7 +239,7 @@ class SPOValueTracker:
         
         Supports two methods for rho calculation:
         1. Global adaptive rho (original): rho adapts based on global KL history
-        2. Per-prompt rho (reference implementation): rho = 2^(-D/D_half) where D is per-prompt KL
+        2. Per-prompt rho: rho = 2^(-D/D_half) where D is per-prompt KL
         
         Args:
             sample_ids: List of sample identifiers (e.g., dataset indices)
@@ -265,7 +265,7 @@ class SPOValueTracker:
             
             # Get rho for this sample
             if per_prompt_rho is not None and sample_id in per_prompt_rho:
-                # Per-prompt rho (reference implementation)
+                # Per-prompt rho
                 rho = per_prompt_rho[sample_id]
             else:
                 # Global adaptive rho
@@ -315,7 +315,7 @@ class SPOValueTracker:
         """
         Calculate per-prompt rho values based on KL divergence approximation.
         
-        Reference implementation formula:
+        Project formula:
             D = KL(π_old || π_new) = Σ_t mask_t * (old_log_prob_t - new_log_prob_t)
             ρ = 2^(-D/D_half)
             ρ = clip(ρ, rho_min, rho_max)
@@ -385,10 +385,10 @@ class SPOValueTracker:
         self.recent_kl_values = []
 
 
-class SPOPrioritizedSampler:
-    """Prioritized sampling for SPO adaptive curriculum learning.
+class MVSRPrioritizedSampler:
+    """Prioritized sampling for MVSR adaptive curriculum learning.
     
-    Based on the SPO paper and reference implementation:
+    MVSR prioritization weights prompts by tracked uncertainty:
     - Weight prompts by uncertainty: sqrt(p*(1-p)) where p = V(x)
     - Samples with p ≈ 0.5 have highest uncertainty → highest weight
     - Samples with p ≈ 0 or p ≈ 1 are easy/hard → lower weight
@@ -401,7 +401,7 @@ class SPOPrioritizedSampler:
                  priority_epsilon: float = 1e-6):
         """
         Args:
-            use_uncertainty_weighting: If True, use sqrt(p*(1-p)) weighting (reference impl)
+            use_uncertainty_weighting: If True, use sqrt(p*(1-p)) weighting (uncertainty weighting)
                                       If False, use advantage-based prioritization
             priority_alpha: Scaling factor for priorities
             priority_epsilon: Small value to avoid zero priorities
@@ -413,12 +413,12 @@ class SPOPrioritizedSampler:
         # Track sample weights
         self.sample_weights = {}
         
-    def update_weights_from_value_tracker(self, value_tracker: SPOValueTracker, 
+    def update_weights_from_value_tracker(self, value_tracker: MVSRValueTracker, 
                                           sample_ids: list = None):
         """
         Update sample weights based on uncertainty from value tracker.
         
-        Reference implementation formula:
+        Project formula:
             weight = sqrt(p * (1-p))
             where p = V(x) = α(x) / (α(x) + β(x))
         
@@ -426,7 +426,7 @@ class SPOPrioritizedSampler:
         and minimum weight to samples with p ≈ 0 or p ≈ 1 (very easy/hard).
         
         Args:
-            value_tracker: SPOValueTracker instance
+            value_tracker: MVSRValueTracker instance
             sample_ids: Optional list of sample IDs to update. If None, update all.
         """
         if not self.use_uncertainty_weighting:
@@ -557,7 +557,7 @@ class AdvantageEstimator(str, Enum):
     REINFORCE_PLUS_PLUS = "reinforce_plus_plus"
     REMAX = "remax"
     RLOO = "rloo"
-    SPO = "spo"
+    MVSR = "mvsr"
 
 
 def get_kl_controller(algorithm_config: "AlgorithmConfig") -> KLController:
@@ -1086,7 +1086,7 @@ def apply_visual_advantage_reweighting(
     3. Optionally renormalize to preserve gradient scale
     
     Args:
-        advantages: Token-level advantages from SPO
+        advantages: Token-level advantages from MVSR
             shape: (batch_size, response_length)
         visual_weights: Visual influence weights from compute_visual_influence_weights
             shape: (batch_size, response_length)
@@ -1236,10 +1236,10 @@ def compute_kl_divergence_between_streams(
 
 
 @torch.no_grad()
-def compute_spo_advantage(
+def compute_mvsr_advantage(
     token_level_scores: torch.Tensor,
     response_mask: torch.Tensor,
-    value_tracker: SPOValueTracker,
+    value_tracker: MVSRValueTracker,
     sample_ids: list,
     kl_divergences: torch.Tensor = None,
     old_log_probs: torch.Tensor = None,
@@ -1251,12 +1251,12 @@ def compute_spo_advantage(
     entropy_kappa: float = 2.0
 ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, Dict[str, float]]]:
     """
-    Compute advantage for Single-stream Policy Optimization (SPO).
+    Compute advantage for Multimodal Vanilla Single-Rollout (MVSR).
     
-    Based on the SPO paper: Single-stream Policy Optimization (arXiv:2509.13232)
+    MVSR is the project baseline for multimodal vanilla single-rollout training.
     Extended with entropy-based shaping for exploration.
     
-    CRITICAL: For SPO, advantages and value tracker should use RAW scores (no KL penalty).
+    CRITICAL: For MVSR, advantages and value tracker should use RAW scores (no KL penalty).
     The KL penalty should be handled as a separate loss term (use_kl_loss: true).
     
     Key Algorithm:
@@ -1278,7 +1278,7 @@ def compute_spo_advantage(
             This should be the output from your reward function (e.g., correctness)
         response_mask: `(torch.Tensor)`
             shape: (bs, response_length) - Response mask
-        value_tracker: `(SPOValueTracker)`
+        value_tracker: `(MVSRValueTracker)`
             Persistent per-sample value tracker for baseline estimation
         sample_ids: `(list)`
             List of sample identifiers (e.g., dataset indices)
@@ -1351,7 +1351,7 @@ def compute_spo_advantage(
     
     # Update value tracker with binary outcomes
     # IMPORTANT: Update for EACH sample independently, even if duplicates exist
-    # This is the correct behavior for SPO - each rollout is an independent update
+    # This is the correct behavior for MVSR - each rollout is an independent update
     if per_prompt_rho is not None:
         # Use per-prompt rho
         value_tracker.update(sample_ids, binary_outcomes, per_prompt_rho=per_prompt_rho)
@@ -1420,7 +1420,7 @@ def compute_spo_advantage(
         else:
             entropy_metrics["entropy/min_shaping_term"] = 0.0
     
-    returns = advantages  # In SPO, returns equal advantages
+    returns = advantages  # In MVSR, returns equal advantages
     
     # Return with optional metrics
     if entropy_metrics:
