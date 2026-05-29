@@ -49,7 +49,7 @@ MVSR is the baseline. MSSR is the stabilized method built on top of it.
 ## Installation
 
 ```bash
-cd mssr
+cd MSSR
 pip install -e .
 ```
 
@@ -57,7 +57,7 @@ pip install -e .
 ## Run MSSR
 
 ```bash
-cd mssr
+cd MSSR
 bash examples/7b_mssr.sh
 ```
 
