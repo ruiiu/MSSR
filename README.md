@@ -45,7 +45,6 @@ MVSR is the baseline. MSSR is the stabilized method built on top of it.
 | REINFORCE++ | `examples/reinforce.sh`, `examples/3b_reinforce.sh` | REINFORCE-style baselines. |
 | RLOO | `examples/rloo.sh`, `examples/3b_rloo.sh` | Leave-one-out baselines. |
 
-Some scripts export internal proxy settings or run a post-training GPU matrix multiplication check. Remove those lines if they do not apply to your environment.
 
 ## Installation
 
@@ -54,7 +53,6 @@ cd mssr
 pip install -e .
 ```
 
-Known repository issue: `setup.py` reads `requirements.txt`, but this folder currently does not contain `requirements.txt`. If editable install fails with `FileNotFoundError`, copy the matching [EasyR1](https://github.com/hiyouga/EasyR1) requirements file into this folder or install dependencies manually before running `pip install -e .`.
 
 ## Run MSSR
 
