@@ -5,7 +5,7 @@
 The terminology in this folder is:
 
 - **MVSR**: Multimodal Vanilla Single-Rollout. This is the vanilla baseline: one rollout per prompt, prompt-level value tracking, and global advantage normalization.
-- **MSSR**: Multimodal Stabilized Single-Rollout. This is our approach: MVSR plus the stabilization recipe used by the main MSSR scripts, especially entropy-shaped advantages and the conservative training settings in `examples/config_mssr.yaml`.
+- **MSSR**: Multimodal Stabilized Single-Rollout. This is our approach: MVSR plus the stabilization recipe used by the main MSSR scripts, especially entropy-based advantage shaping.
 
 ## What This Approach Does
 
