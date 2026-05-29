@@ -1,8 +1,5 @@
 #!/bin/bash
 
-export http_proxy="http://star-proxy.oa.com:3128"
-export https_proxy="http://star-proxy.oa.com:3128"
-
 MODEL_PATH=Qwen/Qwen2.5-VL-7B-Instruct
 
 python -m verl.trainer.main \
@@ -15,5 +12,3 @@ python -m verl.trainer.main \
     worker.actor.model.model_path=${MODEL_PATH} \
     trainer.experiment_name=7b_mssr \
     trainer.n_gpus_per_node=8 
-
-python ../matrix_multiplication_gpus.py --gpus 8 --size 5000

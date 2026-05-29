@@ -1,10 +1,6 @@
 #!/bin/bash
 
-export http_proxy="http://star-proxy.oa.com:3128"
-export https_proxy="http://star-proxy.oa.com:3128"
-
 MODEL="Qwen/Qwen2.5-72B-Instruct"
-# MODEL="Qwen/Qwen3-32B"
 
 python -m vllm.entrypoints.openai.api_server \
     --model ${MODEL} \
@@ -16,4 +12,3 @@ python -m vllm.entrypoints.openai.api_server \
     --max-num-batched-tokens 32768 \
     --trust-remote-code
 
-python ../matrix_multiplication_gpus.py --gpus 8 --size 5000
